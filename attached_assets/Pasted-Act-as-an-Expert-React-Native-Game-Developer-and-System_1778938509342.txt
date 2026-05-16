@@ -1,0 +1,55 @@
+Act as an Expert React Native Game Developer and Systems Architect. Your task is to design and write the core code for a fully production-ready multiplayer trick-taking card game. 
+
+**Tech Stack Requirements:**
+*   **Frontend:** React Native (Expo or Bare workflow).
+*   **Styling:** Tailwind CSS using **NativeWind**.
+*   **Authentication:** **Clerk** (for user registration, login, and session management).
+*   **Backend & Database:** **Supabase** (utilizing PostgreSQL for data storage and Supabase Realtime/WebSockets for sync, room management, and active gameplay states).
+
+Here are the specific rules, mechanics, and UI requirements for the game:
+
+**1. Authentication & Lobby System (Clerk + Supabase):**
+*   Users must be able to register and log in using Clerk. 
+*   Upon successful login, their user profile should sync/exist in a Supabase `profiles` table.
+*   After authenticating, users can either join an existing open game room or create a new room.
+*   A game requires a minimum of 3 players and a maximum of 10 players to start.
+
+**2. Game Configuration (Room Creator):**
+*   The Room Creator determines the settings for the match.
+*   **Cards Per Player:** The creator selects how many cards each player gets (minimum 10, maximum 15). The UI for this must use NativeWind-styled `+` and `-` buttons.
+*   **Total Rounds:** The creator inputs the total number of rounds to be played via a text input field.
+*   *Note:* The total deck size dynamically generates based on (Total Players × Cards Per Player). Example: 4 players × 10 cards = a 40-card deck.
+
+**3. Card Deck Mechanics:**
+*   The deck consists of numbered cards. The card values strictly follow this order: 5, 10, 15, 20, 25, 30, 35, etc.
+
+**4. Dealing & Turn Order (Supabase Realtime):**
+*   When the game starts, players are assigned a random seating order (e.g., Player 1, Player 2, Player 3, Player 4) stored in the database.
+*   The role of the "Dealer" (the person who shuffles and deals) rotates sequentially each round. 
+*   Cards are randomly distributed to all players' client states based on the "Cards Per Player" setting.
+
+**5. Bidding Phase:**
+*   Before playing cards, players evaluate their hands and submit a "bid" representing the points they expect to win.
+*   The UI must provide an input field for players to type and submit their bid.
+*   Bids are kept hidden in the database until every player has submitted theirs. Once everyone has submitted, Supabase Realtime should trigger a simultaneous reveal on all clients.
+
+**6. Gameplay Phase (Real-Time Turn Syncing):**
+*   The player sitting immediately *after* the Dealer plays the first card.
+*   Turns proceed sequentially, broadcasted via Supabase Realtime.
+*   Whoever plays the card with the highest number wins the trick and collects all cards played in that turn.
+*   The game calculates the sum of the numbers on the collected cards for the winner of that trick. The UI should display this sum (e.g., "Collected: 340").
+
+**7. Scoring & End of Round:**
+*   At the end of the round, compare each player's "Collected" amount against their initial "Bid".
+*   If a player's collected points are greater than or equal to their bid, they successfully earn their bidding points. If they fail, apply a logical penalty (e.g., 0 points or negative points for that round).
+*   Store this round data securely in a Supabase `scores` or `round_history` table.
+
+**8. Game End & Leaderboard:**
+*   After the specified number of rounds is reached, the game ends.
+*   Rank the players (1st, 2nd, 3rd, etc.) based on their final cumulative scores and display a beautifully styled NativeWind leaderboard component.
+
+**Deliverables Required:**
+1.  **Database Schema:** A detailed PostgreSQL schema for Supabase (`profiles`, `rooms`, `game_state`, `round_history`).
+2.  **Authentication Integration:** Code snippet showing how Clerk auth state links with Supabase client headers for secure RLS (Row Level Security) policies.
+3.  **UI Components:** Key React Native screens (Lobby and Gameplay Table) styled using NativeWind/Tailwind.
+4.  **Realtime Logic:** React Native hooks (`useEffect`) handling Supabase Realtime subscriptions for turn changes, card drops, and score updates.
