@@ -31,6 +31,7 @@ export default function LobbyScreen() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [roomName, setRoomName] = useState("");
   const [cardsPerPlayer, setCardsPerPlayer] = useState(10);
@@ -47,11 +48,16 @@ export default function LobbyScreen() {
         .order("created_at", { ascending: false })
         .limit(20);
 
-      if (!error && data) {
+      if (error) {
+        console.error("fetchRooms error:", JSON.stringify(error));
+        setFetchError(error.message || JSON.stringify(error));
+      } else {
+        setFetchError(null);
         setRooms(data as Room[]);
       }
-    } catch (e) {
-      console.error("fetchRooms error:", e);
+    } catch (e: any) {
+      console.error("fetchRooms exception:", e);
+      setFetchError(e?.message || String(e));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -105,8 +111,10 @@ export default function LobbyScreen() {
       setShowCreateModal(false);
       setRoomName("");
       router.push(`/(home)/room/${data.id}`);
-    } catch (e) {
-      Alert.alert("Error", "Failed to create room. Please try again.");
+    } catch (e: any) {
+      console.error("createRoom error:", JSON.stringify(e));
+      const msg = e?.message || e?.details || e?.hint || JSON.stringify(e) || "Unknown error";
+      Alert.alert("Error creating room", msg);
     } finally {
       setCreating(false);
     }
@@ -207,6 +215,13 @@ export default function LobbyScreen() {
           loading ? (
             <View style={styles.empty}>
               <ActivityIndicator color={colors.light.gold} size="large" />
+            </View>
+          ) : fetchError ? (
+            <View style={styles.empty}>
+              <Ionicons name="warning-outline" size={48} color={colors.light.destructive} />
+              <Text style={styles.emptyTitle}>Database not set up</Text>
+              <Text style={[styles.emptyText, { color: colors.light.destructive }]}>{fetchError}</Text>
+              <Text style={styles.emptyText}>Run the SQL schema in your Supabase SQL Editor, then pull down to refresh.</Text>
             </View>
           ) : (
             <View style={styles.empty}>
