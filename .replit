@@ -36,3 +36,4 @@ externalPort = 3000
 [userenv.shared]
 EXPO_PUBLIC_SUPABASE_URL = "https://lhxqdsklkevwmiffkcch.supabase.co"
 EXPO_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_JlB7x6t9M6pkbc3K6Cphog_ln8zi8TU"
+EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_bWVycnktbG9uZ2hvcm4tOTIuY2xlcmsuYWNjb3VudHMuZGV2JA"
