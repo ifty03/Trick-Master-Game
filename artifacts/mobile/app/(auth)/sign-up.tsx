@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,16 +10,14 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { useSignUp, useAuth } from "@clerk/expo";
-import { Link, useRouter } from "expo-router";
+import { useSignUp } from "@clerk/expo";
+import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import colors from "@/constants/colors";
 
 export default function SignUpScreen() {
   const { signUp, errors, fetchStatus } = useSignUp();
-  const { isSignedIn } = useAuth();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [email, setEmail] = useState("");
@@ -27,12 +25,6 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [generalError, setGeneralError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isSignedIn) {
-      router.replace("/(home)/lobby");
-    }
-  }, [isSignedIn]);
 
   const handleSignUp = async () => {
     setGeneralError(null);

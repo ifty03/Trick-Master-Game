@@ -43,7 +43,7 @@ export default function LobbyScreen() {
       const client = getClient();
       const { data, error } = await client
         .from("rooms")
-        .select("*, room_players(count)")
+        .select("*")
         .eq("status", "waiting")
         .order("created_at", { ascending: false })
         .limit(20);
