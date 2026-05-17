@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { useSignUp } from "@clerk/expo";
+import { useSignUp, useAuth } from "@clerk/expo";
 import { Link, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,6 +18,7 @@ import colors from "@/constants/colors";
 
 export default function SignUpScreen() {
   const { signUp, errors, fetchStatus } = useSignUp();
+  const { isSignedIn } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -25,21 +26,43 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
+  const [generalError, setGeneralError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      router.replace("/(home)/lobby");
+    }
+  }, [isSignedIn]);
 
   const handleSignUp = async () => {
-    const { error } = await signUp.password({ emailAddress: email, password });
-    if (error) return;
-    if (!error) await signUp.verifications.sendEmailCode();
+    setGeneralError(null);
+    try {
+      const { error } = await signUp.password({ emailAddress: email, password });
+      if (error) {
+        console.error("sign-up error:", JSON.stringify(error));
+        return;
+      }
+      if (!error) await signUp.verifications.sendEmailCode();
+    } catch (e: any) {
+      console.error("sign-up exception:", e);
+      setGeneralError(e?.message || "Sign up failed. Please try again.");
+    }
   };
 
   const handleVerify = async () => {
-    await signUp.verifications.verifyEmailCode({ code: verificationCode });
-    if (signUp.status === "complete") {
-      await signUp.finalize({
-        navigate: () => {
-          router.replace("/(home)/lobby");
-        },
-      });
+    setGeneralError(null);
+    try {
+      await signUp.verifications.verifyEmailCode({ code: verificationCode });
+      if (signUp.status === "complete") {
+        await signUp.finalize({
+          navigate: () => {
+            router.replace("/(home)/lobby");
+          },
+        });
+      }
+    } catch (e: any) {
+      console.error("verify exception:", e);
+      setGeneralError(e?.message || "Verification failed.");
     }
   };
 
@@ -49,40 +72,59 @@ export default function SignUpScreen() {
     signUp.missingFields?.length === 0
   ) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
-        <View style={styles.logoCircle}>
-          <Ionicons name="mail" size={32} color={colors.light.gold} />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <View style={[styles.container, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }]}>
+          <View style={styles.logoCircle}>
+            <Ionicons name="mail-outline" size={32} color={colors.light.gold} />
+          </View>
+          <Text style={styles.title}>Check your email</Text>
+          <Text style={styles.subtitle}>
+            We sent a code to{"\n"}<Text style={{ color: colors.light.foreground, fontFamily: "Inter_600SemiBold" }}>{email}</Text>
+          </Text>
+
+          <View style={styles.card}>
+            <Text style={styles.label}>Verification code</Text>
+            <TextInput
+              style={styles.input}
+              value={verificationCode}
+              onChangeText={setVerificationCode}
+              placeholder="6-digit code"
+              placeholderTextColor={colors.light.mutedForeground}
+              keyboardType="numeric"
+              autoFocus
+            />
+            {errors?.fields?.code && (
+              <Text style={styles.fieldError}>{errors.fields.code.message}</Text>
+            )}
+            {generalError && <Text style={styles.fieldError}>{generalError}</Text>}
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.button,
+                (!verificationCode || fetchStatus === "fetching") && styles.buttonDisabled,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={handleVerify}
+              disabled={!verificationCode || fetchStatus === "fetching"}
+            >
+              {fetchStatus === "fetching" ? (
+                <ActivityIndicator color={colors.light.background} />
+              ) : (
+                <Text style={styles.buttonText}>Verify Email</Text>
+              )}
+            </Pressable>
+
+            <Pressable onPress={() => signUp.verifications.sendEmailCode()} style={styles.secondaryBtn}>
+              <Text style={styles.secondaryBtnText}>Resend code</Text>
+            </Pressable>
+          </View>
+
+          <View nativeID="clerk-captcha" />
         </View>
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.subtitle}>Enter the verification code we sent to {email}</Text>
-        <TextInput
-          style={styles.input}
-          value={verificationCode}
-          onChangeText={setVerificationCode}
-          placeholder="6-digit code"
-          placeholderTextColor={colors.light.mutedForeground}
-          keyboardType="numeric"
-          autoFocus
-        />
-        {errors?.fields?.code && (
-          <Text style={styles.error}>{errors.fields.code.message}</Text>
-        )}
-        <Pressable
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={handleVerify}
-          disabled={fetchStatus === "fetching"}
-        >
-          {fetchStatus === "fetching" ? (
-            <ActivityIndicator color={colors.light.background} />
-          ) : (
-            <Text style={styles.buttonText}>Verify Email</Text>
-          )}
-        </Pressable>
-        <Pressable onPress={() => signUp.verifications.sendEmailCode()} style={styles.resend}>
-          <Text style={styles.resendText}>Resend code</Text>
-        </Pressable>
-        <View nativeID="clerk-captcha" />
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -94,24 +136,21 @@ export default function SignUpScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 40), paddingBottom: insets.bottom + 40 },
+          { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 },
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Ionicons name="diamond" size={40} color={colors.light.gold} />
-          </View>
+        <View style={styles.logoCircle}>
+          <Ionicons name="diamond" size={36} color={colors.light.gold} />
         </View>
 
-        <View style={styles.header}>
-          <Text style={styles.title}>Create account</Text>
-          <Text style={styles.subtitle}>Join the game table</Text>
-        </View>
+        <Text style={styles.appName}>TrickMaster</Text>
+        <Text style={styles.title}>Create your account</Text>
+        <Text style={styles.subtitle}>Join the table and start playing</Text>
 
-        <View style={styles.form}>
+        <View style={styles.card}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Email address</Text>
             <TextInput
               style={styles.input}
               value={email}
@@ -123,13 +162,13 @@ export default function SignUpScreen() {
               autoCorrect={false}
             />
             {errors?.fields?.emailAddress && (
-              <Text style={styles.error}>{errors.fields.emailAddress.message}</Text>
+              <Text style={styles.fieldError}>{errors.fields.emailAddress.message}</Text>
             )}
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
+            <View style={styles.passwordRow}>
               <TextInput
                 style={[styles.input, styles.passwordInput]}
                 value={password}
@@ -139,20 +178,27 @@ export default function SignUpScreen() {
                 secureTextEntry={!showPassword}
               />
               <Pressable
-                style={styles.eyeButton}
+                style={styles.eyeBtn}
                 onPress={() => setShowPassword(!showPassword)}
               >
                 <Ionicons
-                  name={showPassword ? "eye-off" : "eye"}
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
                   size={20}
                   color={colors.light.mutedForeground}
                 />
               </Pressable>
             </View>
             {errors?.fields?.password && (
-              <Text style={styles.error}>{errors.fields.password.message}</Text>
+              <Text style={styles.fieldError}>{errors.fields.password.message}</Text>
             )}
           </View>
+
+          {generalError && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle-outline" size={16} color={colors.light.destructive} />
+              <Text style={styles.errorBannerText}>{generalError}</Text>
+            </View>
+          )}
 
           <Pressable
             style={({ pressed }) => [
@@ -166,7 +212,7 @@ export default function SignUpScreen() {
             {fetchStatus === "fetching" ? (
               <ActivityIndicator color={colors.light.background} />
             ) : (
-              <Text style={styles.buttonText}>Create Account</Text>
+              <Text style={styles.buttonText}>Continue</Text>
             )}
           </Pressable>
 
@@ -189,38 +235,57 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     backgroundColor: colors.light.background,
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
+    alignItems: "center",
   },
-  logoContainer: { alignItems: "center", marginBottom: 32 },
   logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: colors.light.card,
     borderWidth: 1.5,
     borderColor: colors.light.gold,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  header: { marginBottom: 32 },
+  appName: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.light.gold,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 12,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "700",
     color: colors.light.foreground,
-    marginBottom: 6,
+    textAlign: "center",
     fontFamily: "Inter_700Bold",
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: colors.light.mutedForeground,
+    textAlign: "center",
     fontFamily: "Inter_400Regular",
+    marginBottom: 28,
   },
-  form: { gap: 20 },
-  inputGroup: { gap: 8 },
+  card: {
+    width: "100%",
+    backgroundColor: colors.light.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.light.border,
+    padding: 20,
+    gap: 16,
+    marginBottom: 24,
+  },
+  inputGroup: { gap: 6 },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: colors.light.foreground,
     fontFamily: "Inter_600SemiBold",
@@ -230,40 +295,66 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.light.border,
     borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
     color: colors.light.foreground,
     fontFamily: "Inter_400Regular",
+    width: "100%",
   },
-  passwordContainer: { position: "relative" },
-  passwordInput: { paddingRight: 50 },
-  eyeButton: {
+  passwordRow: { position: "relative" },
+  passwordInput: { paddingRight: 48 },
+  eyeBtn: {
     position: "absolute",
-    right: 14,
+    right: 12,
     top: 0,
     bottom: 0,
     justifyContent: "center",
   },
+  fieldError: {
+    fontSize: 12,
+    color: colors.light.destructive,
+    fontFamily: "Inter_400Regular",
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: `${colors.light.destructive}18`,
+    borderRadius: 8,
+    padding: 10,
+  },
+  errorBannerText: {
+    fontSize: 13,
+    color: colors.light.destructive,
+    fontFamily: "Inter_400Regular",
+    flex: 1,
+  },
   button: {
     backgroundColor: colors.light.gold,
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: 10,
+    paddingVertical: 15,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 4,
   },
-  buttonDisabled: { opacity: 0.5 },
+  buttonDisabled: { opacity: 0.45 },
   buttonPressed: { opacity: 0.8 },
   buttonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: colors.light.background,
     fontFamily: "Inter_700Bold",
   },
+  secondaryBtn: { alignItems: "center", paddingVertical: 8 },
+  secondaryBtnText: {
+    color: colors.light.gold,
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+  },
   footer: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 32,
+    alignItems: "center",
   },
   footerText: {
     color: colors.light.mutedForeground,
@@ -275,16 +366,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     fontFamily: "Inter_600SemiBold",
-  },
-  error: {
-    fontSize: 12,
-    color: colors.light.destructive,
-    fontFamily: "Inter_400Regular",
-  },
-  resend: { alignItems: "center", marginTop: 16 },
-  resendText: {
-    color: colors.light.gold,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
   },
 });
