@@ -54,11 +54,7 @@ export default function SignUpScreen() {
     try {
       await signUp.verifications.verifyEmailCode({ code: verificationCode });
       if (signUp.status === "complete") {
-        await signUp.finalize({
-          navigate: () => {
-            router.replace("/(home)/lobby");
-          },
-        });
+        await signUp.finalize({ navigate: () => {} });
       }
     } catch (e: any) {
       console.error("verify exception:", e);

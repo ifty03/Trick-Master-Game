@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useAuth, useUser } from "@clerk/expo";
-import { getSupabase, getSupabaseWithToken } from "@/lib/supabase";
+import { useUser } from "@clerk/expo";
+import { getSupabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Profile } from "@/types/game";
 
 interface AuthContextValue {
   profile: Profile | null;
   isLoading: boolean;
-  getClient: () => ReturnType<typeof getSupabaseWithToken>;
+  getClient: () => SupabaseClient;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -16,11 +17,9 @@ const AuthContext = createContext<AuthContextValue>({
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { getToken } = useAuth();
   const { user, isLoaded } = useUser();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoaded || !user) {
@@ -30,10 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const setup = async () => {
       try {
-        const t = await getToken();
-        setToken(t);
-
-        const client = getSupabaseWithToken(t);
+        const client = getSupabase();
         const username =
           user.username ||
           user.firstName ||
@@ -62,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setup();
   }, [isLoaded, user]);
 
-  const getClient = () => getSupabaseWithToken(token);
+  const getClient = () => getSupabase();
 
   return (
     <AuthContext.Provider value={{ profile, isLoading, getClient }}>

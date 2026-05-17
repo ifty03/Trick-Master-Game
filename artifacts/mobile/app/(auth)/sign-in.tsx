@@ -44,11 +44,7 @@ export default function SignInScreen() {
       }
 
       if (signIn.status === "complete") {
-        await signIn.finalize({
-          navigate: () => {
-            router.replace("/(home)/lobby");
-          },
-        });
+        await signIn.finalize({ navigate: () => {} });
       } else if (signIn.status === "needs_client_trust") {
         const emailCodeFactor = signIn.supportedSecondFactors?.find(
           (f) => f.strategy === "email_code"
@@ -68,11 +64,7 @@ export default function SignInScreen() {
     try {
       await signIn.mfa.verifyEmailCode({ code });
       if (signIn.status === "complete") {
-        await signIn.finalize({
-          navigate: () => {
-            router.replace("/(home)/lobby");
-          },
-        });
+        await signIn.finalize({ navigate: () => {} });
       }
     } catch (e: any) {
       setGeneralError(e?.message || "Verification failed.");
