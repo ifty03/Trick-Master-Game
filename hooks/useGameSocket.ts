@@ -1,0 +1,53 @@
+import { useEffect } from "react";
+import { getSocket, joinLobby, joinRoomChannel, leaveRoomChannel } from "@/lib/socket";
+import { useAuthContext } from "@/context/AuthContext";
+
+type Handlers = {
+  onLobbyUpdate?: () => void;
+  onRoomUpdate?: (payload: unknown) => void;
+  onRoomPlayers?: (players: unknown) => void;
+  onGameState?: (gameState: unknown) => void;
+};
+
+export function useGameSocket(
+  scope: "lobby" | "room" | "game",
+  roomId: string | undefined,
+  handlers: Handlers
+) {
+  const { isSocketReady } = useAuthContext();
+
+  useEffect(() => {
+    if (!isSocketReady) return;
+
+    const socket = getSocket();
+
+    if (scope === "lobby") {
+      joinLobby();
+      const onLobby = () => handlers.onLobbyUpdate?.();
+      socket.on("lobby:updated", onLobby);
+      return () => {
+        socket.off("lobby:updated", onLobby);
+      };
+    }
+
+    if (!roomId) return;
+
+    joinRoomChannel(roomId);
+
+    const onRoom = (payload: unknown) => handlers.onRoomUpdate?.(payload);
+    const onPlayers = (players: unknown) => handlers.onRoomPlayers?.(players);
+    const onGame = (gameState: unknown) => handlers.onGameState?.(gameState);
+
+    socket.on("room:updated", onRoom);
+    socket.on("room:players", onPlayers);
+    socket.on("game:state", onGame);
+
+    return () => {
+      socket.off("room:updated", onRoom);
+      socket.off("room:players", onPlayers);
+      socket.off("game:state", onGame);
+      leaveRoomChannel(roomId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, roomId, isSocketReady]);
+}
