@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSignUp, useOAuth } from "@clerk/expo";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 
@@ -25,6 +25,7 @@ export default function SignUpScreen() {
   const { signUp, errors, fetchStatus } = useSignUp();
   const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,11 +36,12 @@ export default function SignUpScreen() {
 
   const onSelectAuth = async () => {
     try {
-      const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({
+      const { createdSessionId, signIn: oauthSignIn, signUp: oauthSignUp, setActive: oauthSetActive } = await startOAuthFlow({
         redirectUrl: Linking.createURL("/oauth-callback", { scheme: "trickmaster" })
       });
-      if (createdSessionId && setActive) {
-        setActive({ session: createdSessionId });
+      if (createdSessionId && oauthSetActive) {
+        await oauthSetActive({ session: createdSessionId });
+        router.replace("/(home)/lobby");
       }
     } catch (err: any) {
       console.error("OAuth error", err);
@@ -53,17 +55,24 @@ export default function SignUpScreen() {
   };
 
   const handleSignUp = async () => {
+    if (!signUp) return;
     setGeneralError(null);
     try {
-      const { error } = await signUp.password({ emailAddress: email, password });
-      if (error) {
-        console.error("sign-up error:", JSON.stringify(error));
+      const res = await signUp.create({
+        emailAddress: email,
+        password,
+      });
+      if (res.error) {
+        console.error("sign-up error:", JSON.stringify(res.error));
+        setGeneralError(res.error.longMessage || res.error.message || "Sign up failed.");
         return;
       }
-      if (!error) {
-        await signUp.verifications.sendEmailCode();
-        setVerifying(true);
+      const sendRes = await signUp.verifications.sendEmailCode();
+      if (sendRes.error) {
+        setGeneralError(sendRes.error.longMessage || sendRes.error.message || "Failed to send verification code.");
+        return;
       }
+      setVerifying(true);
     } catch (e: any) {
       console.error("sign-up exception:", e);
       setGeneralError(e?.message || "Sign up failed. Please try again.");
@@ -71,11 +80,23 @@ export default function SignUpScreen() {
   };
 
   const handleVerify = async () => {
+    if (!signUp) return;
     setGeneralError(null);
     try {
-      await signUp.verifications.verifyEmailCode({ code: verificationCode });
+      const res = await signUp.verifications.verifyEmailCode({
+        code: verificationCode,
+      });
+      if (res.error) {
+        setGeneralError(res.error.longMessage || res.error.message || "Verification failed.");
+        return;
+      }
       if (signUp.status === "complete") {
-        await signUp.finalize({ navigate: () => {} });
+        const finalizeRes = await signUp.finalize();
+        if (finalizeRes.error) {
+          setGeneralError(finalizeRes.error.longMessage || finalizeRes.error.message || "Failed to finalize session.");
+        } else {
+          router.replace("/(home)/lobby");
+        }
       }
     } catch (e: any) {
       console.error("verify exception:", e);
@@ -83,17 +104,39 @@ export default function SignUpScreen() {
     }
   };
 
-  const handleStartOver = async () => {
+  const handleResendCode = async () => {
+    if (!signUp) return;
+    setGeneralError(null);
     try {
-      await signUp.reset();
-      setVerifying(false);
-      setVerificationCode("");
-      setGeneralError(null);
-    } catch (e) {
-      console.error("Reset signup error:", e);
-      setVerifying(false);
+      const res = await signUp.verifications.sendEmailCode();
+      if (res.error) {
+        setGeneralError(res.error.longMessage || res.error.message || "Failed to resend code.");
+      }
+    } catch (e: any) {
+      console.error("resend code exception:", e);
+      setGeneralError(e?.message || "Failed to resend code.");
     }
   };
+
+  const handleStartOver = async () => {
+    if (!signUp) return;
+    setGeneralError(null);
+    setVerifying(false);
+    setVerificationCode("");
+    try {
+      await signUp.reset();
+    } catch (e: any) {
+      console.error("Reset signup error:", e);
+    }
+  };
+
+  if (!signUp) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.light.background }}>
+        <ActivityIndicator color={colors.light.gold} size="large" />
+      </View>
+    );
+  }
 
   if (
     verifying &&
@@ -151,10 +194,10 @@ export default function SignUpScreen() {
               )}
             </Pressable>
 
-            <Pressable onPress={() => signUp.verifications.sendEmailCode()} style={styles.secondaryBtn}>
+            <Pressable onPress={handleResendCode} style={styles.secondaryBtn} disabled={fetchStatus === "fetching"}>
               <Text style={styles.secondaryBtnText}>Resend code</Text>
             </Pressable>
-            <Pressable onPress={handleStartOver} style={styles.secondaryBtn}>
+            <Pressable onPress={handleStartOver} style={styles.secondaryBtn} disabled={fetchStatus === "fetching"}>
               <Text style={styles.secondaryBtnText}>Back to Sign Up</Text>
             </Pressable>
           </View>

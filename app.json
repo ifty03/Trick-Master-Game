@@ -7,14 +7,18 @@
     "icon": "./assets/images/icon.png",
     "scheme": "trickmaster",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0D1117"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.trickmaster.game",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.trickmaster.game",
@@ -34,7 +38,19 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "packagingOptions": {
+              "exclude": [
+                "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+              ]
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -45,8 +61,9 @@
         "origin": "https://replit.com/"
       },
       "eas": {
-        "projectId": "1b39ad30-b94e-403c-97e4-64f1a57c3a94"
+        "projectId": "0ac0cb23-1b60-44eb-b351-16c575595d6f"
       }
-    }
+    },
+    "owner": "ashik91"
   }
 }

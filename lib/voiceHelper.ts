@@ -35,7 +35,7 @@ export async function initVoice() {
       // 1. Look for Enhanced quality voice (available on iOS and some Android devices)
       const enhancedVoice = englishVoices.find(
         (v) =>
-          v.quality === "enhanced" ||
+          (v.quality as string) === "enhanced" ||
           v.name.toLowerCase().includes("enhanced") ||
           v.name.toLowerCase().includes("premium")
       );

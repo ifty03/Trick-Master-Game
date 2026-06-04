@@ -11,6 +11,10 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://muggiest-robyn-nonreduced.ngrok-free.dev",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bWVycnktbG9uZ2hvcm4tOTIuY2xlcmsuYWNjb3VudHMuZGV2JA"
       }
     },
     "production": {}

@@ -9,9 +9,10 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSignIn, useOAuth } from "@clerk/expo";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 
@@ -25,6 +26,7 @@ export default function SignInScreen() {
   const { signIn, errors, fetchStatus } = useSignIn();
   const { startOAuthFlow } = useOAuth({ strategy: "oauth_google" });
   const insets = useSafeAreaInsets();
+  const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,11 +36,12 @@ export default function SignInScreen() {
 
   const onSelectAuth = async () => {
     try {
-      const { createdSessionId, signIn, signUp, setActive } = await startOAuthFlow({
+      const { createdSessionId, signIn: oauthSignIn, signUp: oauthSignUp, setActive: oauthSetActive } = await startOAuthFlow({
         redirectUrl: Linking.createURL("/oauth-callback", { scheme: "trickmaster" })
       });
-      if (createdSessionId && setActive) {
-        setActive({ session: createdSessionId });
+      if (createdSessionId && oauthSetActive) {
+        await oauthSetActive({ session: createdSessionId });
+        router.replace("/(home)/lobby");
       }
     } catch (err: any) {
       console.error("OAuth error", err);
@@ -52,23 +55,57 @@ export default function SignInScreen() {
   };
 
   const handleSignIn = async () => {
+    if (!signIn) return;
     setGeneralError(null);
     try {
-      const { error } = await signIn.password({ emailAddress: email, password });
-      if (error) {
-        console.error("sign-in error:", JSON.stringify(error));
+      // Step 1: Create the sign-in attempt with email
+      const res = await signIn.create({ identifier: email });
+      if (res.error) {
+        console.error("sign-in create error:", JSON.stringify(res.error));
+        setGeneralError(res.error.longMessage || res.error.message || "Sign in failed.");
         return;
       }
 
+      // Step 2: Authenticate password
+      const passRes = await signIn.password({ password });
+      if (passRes.error) {
+        console.error("sign-in password error:", JSON.stringify(passRes.error));
+        setGeneralError(passRes.error.longMessage || passRes.error.message || "Sign in failed.");
+        return;
+      }
+
+      // Step 3: Check status and finalize or request verification
       if (signIn.status === "complete") {
-        await signIn.finalize({ navigate: () => {} });
-      } else if (signIn.status === "needs_client_trust") {
+        const finalizeRes = await signIn.finalize();
+        if (finalizeRes.error) {
+          setGeneralError(finalizeRes.error.longMessage || finalizeRes.error.message || "Failed to finalize session.");
+        } else {
+          router.replace("/(home)/lobby");
+        }
+      } else if (signIn.status === "needs_client_trust" || signIn.status === "needs_second_factor") {
         const emailCodeFactor = signIn.supportedSecondFactors?.find(
           (f) => f.strategy === "email_code"
         );
         if (emailCodeFactor) {
-          await signIn.mfa.sendEmailCode();
+          const sendRes = await signIn.mfa.sendEmailCode();
+          if (sendRes.error) {
+            setGeneralError(sendRes.error.longMessage || sendRes.error.message || "Failed to send code.");
+          }
+        } else {
+          const phoneCodeFactor = signIn.supportedSecondFactors?.find(
+            (f) => f.strategy === "phone_code"
+          );
+          if (phoneCodeFactor) {
+            const sendRes = await signIn.mfa.sendPhoneCode();
+            if (sendRes.error) {
+              setGeneralError(sendRes.error.longMessage || sendRes.error.message || "Failed to send SMS code.");
+            }
+          } else {
+            setGeneralError(`MFA verification strategy not supported. Factors: ${JSON.stringify(signIn.supportedSecondFactors)}`);
+          }
         }
+      } else {
+        setGeneralError(`Authentication required: ${signIn.status}`);
       }
     } catch (e: any) {
       console.error("sign-in exception:", e);
@@ -77,18 +114,94 @@ export default function SignInScreen() {
   };
 
   const handleVerify = async () => {
+    if (!signIn) return;
     setGeneralError(null);
     try {
-      await signIn.mfa.verifyEmailCode({ code });
+      const emailCodeFactor = signIn.supportedSecondFactors?.find(
+        (f) => f.strategy === "email_code"
+      );
+      const phoneCodeFactor = signIn.supportedSecondFactors?.find(
+        (f) => f.strategy === "phone_code"
+      );
+
+      let res;
+      if (emailCodeFactor) {
+        res = await signIn.mfa.verifyEmailCode({ code });
+      } else if (phoneCodeFactor) {
+        res = await signIn.mfa.verifyPhoneCode({ code });
+      } else {
+        setGeneralError("No supported MFA verification strategy found.");
+        return;
+      }
+
+      if (res.error) {
+        setGeneralError(res.error.longMessage || res.error.message || "Verification failed.");
+        return;
+      }
       if (signIn.status === "complete") {
-        await signIn.finalize({ navigate: () => {} });
+        const finalizeRes = await signIn.finalize();
+        if (finalizeRes.error) {
+          setGeneralError(finalizeRes.error.longMessage || finalizeRes.error.message || "Failed to finalize session.");
+        } else {
+          router.replace("/(home)/lobby");
+        }
       }
     } catch (e: any) {
+      console.error("verify exception:", e);
       setGeneralError(e?.message || "Verification failed.");
     }
   };
 
-  if (signIn.status === "needs_client_trust") {
+  const handleResendCode = async () => {
+    if (!signIn) return;
+    setGeneralError(null);
+    try {
+      const emailCodeFactor = signIn.supportedSecondFactors?.find(
+        (f) => f.strategy === "email_code"
+      );
+      const phoneCodeFactor = signIn.supportedSecondFactors?.find(
+        (f) => f.strategy === "phone_code"
+      );
+
+      let res;
+      if (emailCodeFactor) {
+        res = await signIn.mfa.sendEmailCode();
+      } else if (phoneCodeFactor) {
+        res = await signIn.mfa.sendPhoneCode();
+      } else {
+        setGeneralError("No supported MFA verification strategy found.");
+        return;
+      }
+
+      if (res.error) {
+        setGeneralError(res.error.longMessage || res.error.message || "Failed to resend code.");
+      }
+    } catch (e: any) {
+      console.error("resend code exception:", e);
+      setGeneralError(e?.message || "Failed to resend code.");
+    }
+  };
+
+  const handleStartOver = async () => {
+    if (!signIn) return;
+    setGeneralError(null);
+    setCode("");
+    try {
+      await signIn.reset();
+    } catch (e: any) {
+      console.error("reset exception:", e);
+    }
+  };
+
+  if (!signIn) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.light.background }}>
+        <ActivityIndicator color={colors.light.gold} size="large" />
+      </View>
+    );
+  }
+
+  if (signIn.status === "needs_client_trust" || signIn.status === "needs_second_factor") {
     return (
       <KeyboardAvoidingView
         style={styles.flex}
@@ -137,10 +250,10 @@ export default function SignInScreen() {
               )}
             </Pressable>
 
-            <Pressable onPress={() => signIn.mfa.sendEmailCode()} style={styles.secondaryBtn}>
+            <Pressable onPress={handleResendCode} style={styles.secondaryBtn} disabled={fetchStatus === "fetching"}>
               <Text style={styles.secondaryBtnText}>Resend code</Text>
             </Pressable>
-            <Pressable onPress={() => signIn.reset()} style={styles.secondaryBtn}>
+            <Pressable onPress={handleStartOver} style={styles.secondaryBtn} disabled={fetchStatus === "fetching"}>
               <Text style={styles.secondaryBtnText}>Start over</Text>
             </Pressable>
           </View>

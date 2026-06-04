@@ -144,6 +144,9 @@ export default function GameScreen() {
   const [players, setPlayers] = useState<RoomPlayer[]>([]);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scoreModalVisible, setScoreModalVisible] = useState(false);
+  const [completedWinnerId, setCompletedWinnerId] = useState<string | null>(null);
+  const [isTrickTransitioning, setIsTrickTransitioning] = useState(false);
   const [bidInput, setBidInput] = useState("");
   const [submittingBid, setSubmittingBid] = useState(false);
   const [playingCard, setPlayingCard] = useState(false);
@@ -165,7 +168,106 @@ export default function GameScreen() {
     }, 2800);
   }, []);
 
+  const trickScale = useRef(new Animated.Value(1)).current;
+  const trickOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (completedWinnerId) {
+      trickScale.setValue(1);
+      trickOpacity.setValue(1);
+
+      Animated.sequence([
+        Animated.spring(trickScale, {
+          toValue: 1.6,
+          useNativeDriver: true,
+          tension: 45,
+          friction: 4,
+        }),
+        Animated.delay(900),
+        Animated.timing(trickOpacity, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      trickScale.setValue(1);
+      trickOpacity.setValue(1);
+    }
+  }, [completedWinnerId, trickScale, trickOpacity]);
+
   const myUserId = user?.id ?? "";
+
+  const updateGameStateWithTrickDelay = useCallback((nextState: GameState) => {
+    setGameState((prevState) => {
+      if (!prevState) {
+        if (nextState.phase === "finished") {
+          router.replace(`/(home)/leaderboard/${id}`);
+        }
+        return nextState;
+      }
+
+      const prevTrick = prevState.current_trick || [];
+      const nextTrick = nextState.current_trick || [];
+
+      // A trick just completed if the previous state had (players.length - 1) cards, and the new state trick is empty
+      const prevTrickCompleted = prevTrick.length > 0 && prevTrick.length === players.length - 1 && nextTrick.length === 0;
+
+      if (prevTrickCompleted) {
+        setIsTrickTransitioning(true);
+
+        // Find which player played the completing card (the current turn seat in prevState)
+        const lastPlayerSeat = prevState.current_turn_seat;
+        const lastPlayer = players.find((p) => p.seat_order === lastPlayerSeat);
+
+        let playedCard = 0;
+        if (lastPlayer) {
+          const prevHand = prevState.hands[lastPlayer.clerk_user_id] || [];
+          const nextHand = nextState.hands[lastPlayer.clerk_user_id] || [];
+          playedCard = prevHand.find((c) => !nextHand.includes(c)) || 0;
+        }
+
+        if (lastPlayer && playedCard > 0) {
+          const lastPlayedCardObj = {
+            clerk_user_id: lastPlayer.clerk_user_id,
+            username: lastPlayer.username,
+            seat_order: lastPlayer.seat_order,
+            card: playedCard,
+          };
+
+          const fullCompletedTrick = [...prevTrick, lastPlayedCardObj];
+          const winner = fullCompletedTrick.reduce((highest, item) => (item.card > highest.card ? item : highest));
+
+          setCompletedWinnerId(winner.clerk_user_id);
+
+          setTimeout(() => {
+            setCompletedWinnerId(null);
+            setIsTrickTransitioning(false);
+            setGameState(nextState);
+            if (nextState.phase === "finished") {
+              router.replace(`/(home)/leaderboard/${id}`);
+            }
+          }, 2500);
+
+          // Return the incoming state but override current_trick with fullCompletedTrick so it remains rendered
+          return {
+            ...nextState,
+            current_trick: fullCompletedTrick,
+          };
+        }
+      }
+
+      if (nextState.phase === "finished") {
+        router.replace(`/(home)/leaderboard/${id}`);
+      }
+
+      return nextState;
+    });
+  }, [players, id, router]);
+
+  const handleSetGameState = useCallback((nextState: GameState) => {
+    updateGameStateWithTrickDelay(nextState);
+  }, [updateGameStateWithTrickDelay]);
 
   const fetchGame = useCallback(async () => {
     if (!id) return false;
@@ -178,10 +280,7 @@ export default function GameScreen() {
       setRoom(roomData.room);
       setPlayers(gameData.players);
       if (gameData.game_state) {
-        setGameState(gameData.game_state);
-        if (gameData.game_state.phase === "finished") {
-          router.replace(`/(home)/leaderboard/${id}`);
-        }
+        handleSetGameState(gameData.game_state);
         return true;
       }
       return false;
@@ -312,10 +411,7 @@ export default function GameScreen() {
   useGameSocket("game", id, {
     onGameState: (payload) => {
       const gs = payload as GameState;
-      setGameState(gs);
-      if (gs.phase === "finished") {
-        router.replace(`/(home)/leaderboard/${id}`);
-      }
+      handleSetGameState(gs);
     },
     onRoomPlayers: (payload) => {
       setPlayers(payload as RoomPlayer[]);
@@ -329,7 +425,7 @@ export default function GameScreen() {
     setBeginningBidding(true);
     try {
       const data = await apiFetch<{ game_state: GameState }>(`/game/${id}/shuffle-deal`, { method: "POST" });
-      setGameState(data.game_state);
+      handleSetGameState(data.game_state);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (e) {
       Alert.alert("Error", e instanceof ApiError ? e.message : "Failed to shuffle cards");
@@ -344,7 +440,7 @@ export default function GameScreen() {
     setStartingNextRound(true);
     try {
       const data = await apiFetch<{ game_state: GameState }>(`/game/${id}/next-round`, { method: "POST" });
-      setGameState(data.game_state);
+      handleSetGameState(data.game_state);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (e) {
       Alert.alert("Error", e instanceof ApiError ? e.message : "Failed to start next round");
@@ -362,7 +458,7 @@ export default function GameScreen() {
         method: "POST",
         body: JSON.stringify({ bid }),
       });
-      setGameState(data.game_state);
+      handleSetGameState(data.game_state);
       setBidInput("");
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e) {
@@ -373,14 +469,14 @@ export default function GameScreen() {
   };
 
   const playCard = async (card: number) => {
-    if (!id || playingCard) return;
+    if (!id || playingCard || isTrickTransitioning) return;
     setPlayingCard(true);
     try {
       const data = await apiFetch<{ game_state: GameState }>(`/game/${id}/play`, {
         method: "POST",
         body: JSON.stringify({ card }),
       });
-      setGameState(data.game_state);
+      handleSetGameState(data.game_state);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e) {
       Alert.alert("Error", e instanceof ApiError ? e.message : "Failed to play card");
@@ -409,6 +505,36 @@ export default function GameScreen() {
   const currentTurnPlayer = players.find((p) => p.seat_order === gameState.current_turn_seat);
   const dealerPlayer = players.find((p) => p.seat_order === gameState.dealer_seat);
   const showHandPanel = gameState.phase === "dealing" || gameState.phase === "bidding" || gameState.phase === "playing";
+
+  const getStatusText = () => {
+    if (gameState.phase === "dealing") {
+      return `${dealerPlayer?.username ?? "Dealer"} is dealing the cards...`;
+    }
+    if (gameState.phase === "bidding") {
+      if (isMyTurn && !hasBid) {
+        return "Your turn! Place your bid below.";
+      }
+      return `Waiting for ${currentTurnPlayer?.username ?? "next player"} to place their bid...`;
+    }
+    if (gameState.phase === "playing") {
+      const lastPlay = gameState.current_trick[gameState.current_trick.length - 1];
+      if (lastPlay) {
+        const turnText = isMyTurn
+          ? "Your turn! Play a card."
+          : `Waiting for ${currentTurnPlayer?.username ?? "next player"}...`;
+        return `${lastPlay.username} threw Card ${lastPlay.card}. ${turnText}`;
+      } else {
+        if (isMyTurn) {
+          return "New trick started! You lead — play a card.";
+        }
+        return `New trick started! Waiting for ${currentTurnPlayer?.username ?? "next player"} to lead...`;
+      }
+    }
+    if (gameState.phase === "scoring") {
+      return `Round ${gameState.current_round} ended. Reviewing scores...`;
+    }
+    return "";
+  };
 
   return (
     <KeyboardAvoidingView
@@ -447,89 +573,156 @@ export default function GameScreen() {
               color={isMuted ? colors.light.mutedForeground : colors.light.gold}
             />
           </Pressable>
-          <View style={styles.scorePill}>
-            <Ionicons name="star" size={14} color={colors.light.gold} />
-            <Text style={styles.scoreValue}>{myScore}</Text>
-          </View>
+          <Pressable
+            onPress={() => setScoreModalVisible(true)}
+            style={({ pressed }) => [
+              styles.scoresBtn,
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <Ionicons name="trophy-outline" size={16} color={colors.light.gold} />
+            <Text style={styles.scoresBtnText}>Scores</Text>
+          </Pressable>
         </View>
       </View>
 
-      {/* Compact horizontal opponent bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.opponentBar} contentContainerStyle={styles.opponentBarContent}>
-        {players.map((p) => {
-          const isActive = p.seat_order === gameState.current_turn_seat && gameState.phase !== "dealing";
-          const isMe = p.clerk_user_id === myUserId;
-          const isPlayerDealer = p.seat_order === gameState.dealer_seat;
-          const playerBid = gameState.bids[p.clerk_user_id];
-          const playerCollected = gameState.tricks_collected[p.clerk_user_id] ?? 0;
-
-          return (
-            <View key={p.id} style={[styles.opponentChip, isActive && styles.opponentChipActive, isMe && styles.opponentChipMe]}>
-              <View style={[styles.opponentAvatar, isActive && styles.opponentAvatarActive]}>
-                {p.avatar_url ? (
-                  <Image source={{ uri: p.avatar_url }} style={{ width: "100%", height: "100%", borderRadius: 18 }} />
-                ) : (
-                  <Text style={[styles.opponentAvatarText, isActive && { color: colors.light.background }]}>{p.username.charAt(0).toUpperCase()}</Text>
-                )}
-                {isPlayerDealer && (
-                  <View style={styles.dealerDot}>
-                    <Text style={styles.dealerDotText}>D</Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.opponentInfo}>
-                <Text style={styles.opponentName} numberOfLines={1}>{isMe ? "You" : p.username}</Text>
-                <View style={styles.opponentSubRow}>
-                  <Text style={styles.opponentScore}>{gameState.scores[p.clerk_user_id] ?? 0} pts</Text>
-                  {gameState.phase !== "dealing" && (
-                    <Text style={styles.opponentBidStatus}>
-                      {gameState.bids_revealed
-                        ? `Bid: ${playerBid ?? "—"} (Won: ${playerCollected})`
-                        : playerBid !== null ? `✓ (${playerCollected})` : `… (${playerCollected})`}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          );
-        })}
-      </ScrollView>
+      {/* Game Actions & Status Banner */}
+      <View style={styles.statusBar}>
+        <Ionicons name="information-circle-outline" size={18} color={colors.light.gold} />
+        <Text style={styles.statusBarText} numberOfLines={2}>
+          {getStatusText()}
+        </Text>
+      </View>
 
       {/* Central felt table area */}
       <View style={styles.tableArea}>
-        <View style={styles.tableInnerRing} pointerEvents="none" />
-        {gameState.phase === "dealing" ? (
-          <View style={styles.tableCenter}>
-            <View style={styles.dealingVisual}>
-              <Text style={styles.dealingCardStack}>🃏</Text>
-              <Text style={styles.dealingTitle}>{dealerPlayer?.username ?? "Dealer"} dealt the cards</Text>
-              <Text style={styles.dealingSubtitle}>Review your hand — bidding starts next</Text>
+        <View style={styles.tableContainer}>
+          <View style={styles.roundTable} />
+          
+          {/* Central phase status text inside the round table */}
+          {completedWinnerId ? (
+            <View style={styles.tableCenterDealing}>
+              <Text style={{ fontSize: 26, marginBottom: 2 }}>🏆</Text>
+              <Text style={[styles.tableCenterText, { color: colors.light.gold }]}>
+                {completedWinnerId === myUserId ? "You Win!" : `${players.find(pl => pl.clerk_user_id === completedWinnerId)?.username ?? "Winner"} wins!`}
+              </Text>
             </View>
-          </View>
-        ) : gameState.phase === "playing" || gameState.phase === "bidding" ? (
-          <View style={styles.tableCenter}>
-            <Text style={styles.trickLabel}>
-              {gameState.phase === "playing" ? "TABLE" : "BIDDING ROUND"}
-            </Text>
-            <View style={styles.trickCards}>
-              {gameState.current_trick.length === 0 ? (
-                <Text style={styles.noTrickText}>
-                  {gameState.phase === "playing" ? "Waiting for first card…" : "Place your bids"}
-                </Text>
-              ) : (
-                gameState.current_trick.map((tc, i) => (
-                  <View key={i} style={[styles.trickCard, { transform: [{ rotate: `${(i - 1) * 3}deg` }] }]}>
-                    <View style={styles.trickCardInitialBadge}>
-                      <Text style={styles.trickCardInitial}>{tc.username.charAt(0)}</Text>
-                    </View>
-                    <Text style={styles.trickCardValue}>{tc.card}</Text>
-                    <Text style={styles.trickCardPlayer}>{tc.username}</Text>
+          ) : gameState.phase === "dealing" ? (
+            <View style={styles.tableCenterDealing}>
+              <Text style={styles.tableCenterEmoji}>🃏</Text>
+              <Text style={styles.tableCenterText}>Dealing</Text>
+            </View>
+          ) : gameState.phase === "bidding" ? (
+            <View style={styles.tableCenterDealing}>
+              <Text style={styles.tableCenterEmoji}>🤔</Text>
+              <Text style={styles.tableCenterText}>Bidding</Text>
+            </View>
+          ) : gameState.phase === "playing" && gameState.current_trick.length === 0 ? (
+            <View style={styles.tableCenterDealing}>
+              <Text style={styles.tableCenterEmoji}>🃏</Text>
+              <Text style={styles.tableCenterText}>Play Card</Text>
+            </View>
+          ) : null}
+
+          {/* Render players dynamically positioned around the round table */}
+          {players.map((p) => {
+            const total = players.length;
+            const myPlayerSeat = myPlayer?.seat_order ?? 0;
+            
+            // Calculate relative index starting from me (index 0)
+            const relativeIndex = (p.seat_order - myPlayerSeat + total) % total;
+            
+            // angleDeg: 90 is bottom (South). Stepping clockwise (90 + relIndex * 360 / total)
+            const angleDeg = 90 + (relativeIndex * 360) / total;
+            const angleRad = (angleDeg * Math.PI) / 180;
+            
+            // Center of table is (170, 170)
+            // Player slot positioned at radius 120
+            const left = 170 + 120 * Math.cos(angleRad) - 40; // width=80 -> offset 40
+            const top = 170 + 120 * Math.sin(angleRad) - 37.5; // height=75 -> offset 37.5
+            
+            // Played card positioned at radius 55
+            const cardLeft = 170 + 55 * Math.cos(angleRad) - 21; // width=42 -> offset 21
+            const cardTop = 170 + 55 * Math.sin(angleRad) - 29; // height=58 -> offset 29
+
+            const isActive = p.seat_order === gameState.current_turn_seat && gameState.phase !== "dealing";
+            const isMe = p.clerk_user_id === myUserId;
+            const isPlayerDealer = p.seat_order === gameState.dealer_seat;
+            const playerBid = gameState.bids[p.clerk_user_id];
+            const playerCollected = gameState.tricks_collected[p.clerk_user_id] ?? 0;
+            
+            // Check if this player has played a card in the current trick
+            const playedCardObj = gameState.current_trick.find((tc) => tc.clerk_user_id === p.clerk_user_id);
+
+            return (
+              <React.Fragment key={p.id}>
+                {/* Played Card */}
+                {gameState.phase === "playing" && playedCardObj && (
+                  <Animated.View 
+                    style={[
+                      styles.tablePlayedCard, 
+                      { 
+                        left: cardLeft, 
+                        top: cardTop,
+                        transform: [
+                          { scale: completedWinnerId === p.clerk_user_id ? trickScale : 1 }
+                        ],
+                        opacity: completedWinnerId ? trickOpacity : 1
+                      },
+                      completedWinnerId === p.clerk_user_id && styles.tablePlayedCardWinning
+                    ]}
+                  >
+                    <Text style={styles.tablePlayedCardValue}>{playedCardObj.card}</Text>
+                    {completedWinnerId === p.clerk_user_id && (
+                      <View style={styles.winningCardCrown}>
+                        <Ionicons name="trophy" size={10} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </Animated.View>
+                )}
+
+                {/* Player Slot Info */}
+                <View
+                  style={[
+                    styles.playerSlot,
+                    isMe && styles.playerSlotMe,
+                    isActive && styles.playerSlotActive,
+                    { left, top }
+                  ]}
+                >
+                  <View style={styles.playerSlotAvatarContainer}>
+                    {p.avatar_url ? (
+                      <Image source={{ uri: p.avatar_url }} style={styles.playerSlotAvatar} />
+                    ) : (
+                      <View style={[styles.playerSlotAvatar, styles.playerSlotAvatarPlaceholder]}>
+                        <Text style={styles.avatarPlaceholderText}>
+                          {p.username.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    {isPlayerDealer && (
+                      <View style={styles.slotDealerDot}>
+                        <Text style={styles.slotDealerDotText}>D</Text>
+                      </View>
+                    )}
                   </View>
-                ))
-              )}
-            </View>
-          </View>
-        ) : null}
+                  <View style={styles.playerSlotInfo}>
+                    <Text style={styles.playerSlotName} numberOfLines={1}>
+                      {isMe ? "You" : p.username}
+                    </Text>
+                    {gameState.phase !== "dealing" && (
+                      <Text style={styles.playerSlotPoints}>
+                        {gameState.phase === "bidding" && !gameState.bids_revealed
+                          ? (playerBid !== null ? "✓" : "…")
+                          : `B:${playerBid ?? "—"} W:${playerCollected}`}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </React.Fragment>
+            );
+          })}
+        </View>
       </View>
 
       {/* Hand panel */}
@@ -545,7 +738,7 @@ export default function GameScreen() {
               </View>
             )}
           </View>
-          <HandCards hand={myHand} onPlayCard={playCard} playable={gameState.phase === "playing" && isMyTurn} playingCard={playingCard} />
+          <HandCards hand={myHand} onPlayCard={playCard} playable={gameState.phase === "playing" && isMyTurn && !isTrickTransitioning} playingCard={playingCard} />
         </View>
       )}
 
@@ -635,6 +828,64 @@ export default function GameScreen() {
 
       <Modal
         transparent
+        visible={scoreModalVisible}
+        animationType="fade"
+        onRequestClose={() => setScoreModalVisible(false)}
+      >
+        <BlurView intensity={30} style={StyleSheet.absoluteFill} tint="dark">
+          <View style={styles.modalOverlay}>
+            <View style={styles.scoreModalCard}>
+              <View style={styles.scoreModalHeader}>
+                <Ionicons name="trophy" size={28} color={colors.light.gold} />
+                <Text style={styles.scoreModalTitle}>Total Scores</Text>
+              </View>
+
+              <View style={styles.scoreModalTable}>
+                <View style={styles.scoreModalHeaderRow}>
+                  <Text style={[styles.scoreModalHeaderCell, { flex: 2, textAlign: "left" }]}>Player</Text>
+                  <Text style={styles.scoreModalHeaderCell}>Seat</Text>
+                  <Text style={[styles.scoreModalHeaderCell, { textAlign: "right" }]}>Score</Text>
+                </View>
+                {players.map((p) => {
+                  const score = gameState.scores[p.clerk_user_id] ?? 0;
+                  const isMe = p.clerk_user_id === myUserId;
+                  return (
+                    <View key={p.id} style={[styles.scoreModalRow, isMe && styles.scoreModalRowMe]}>
+                      <View style={{ flex: 2, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {p.avatar_url ? (
+                          <Image source={{ uri: p.avatar_url }} style={styles.scoreModalAvatar} />
+                        ) : (
+                          <View style={styles.scoreModalAvatarPlaceholder}>
+                            <Text style={styles.scoreModalAvatarText}>{p.username.charAt(0).toUpperCase()}</Text>
+                          </View>
+                        )}
+                        <Text style={[styles.scoreModalCellText, { textAlign: "left" }, isMe && { fontWeight: "700", color: colors.light.gold }]} numberOfLines={1}>
+                          {isMe ? "You" : p.username}
+                        </Text>
+                      </View>
+                      <Text style={styles.scoreModalCellText}>{p.seat_order}</Text>
+                      <Text style={[styles.scoreModalCellText, { fontWeight: "700", color: colors.light.gold, textAlign: "right" }]}>{score} pts</Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <Pressable
+                onPress={() => setScoreModalVisible(false)}
+                style={({ pressed }) => [
+                  styles.scoreModalCloseBtn,
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={styles.scoreModalCloseText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </BlurView>
+      </Modal>
+
+      <Modal
+        transparent
         visible={quitModalVisible}
         animationType="fade"
         onRequestClose={() => {
@@ -706,42 +957,322 @@ const styles = StyleSheet.create({
   phaseBadgePlaying: { backgroundColor: colors.light.emeraldGlow, borderColor: colors.light.accent },
   phaseBadgeDealing: { backgroundColor: colors.light.purpleGlow, borderColor: `${colors.light.purple}40` },
   phaseLabel: { fontSize: 10, fontWeight: "600", color: colors.light.foreground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5 },
-  scorePill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.light.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: colors.light.border },
-  scoreValue: { fontSize: 15, fontWeight: "700", color: colors.light.gold, fontFamily: "Inter_700Bold" },
+  scoresBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(212, 175, 55, 0.12)",
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "rgba(212, 175, 55, 0.3)",
+  },
+  scoresBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.light.gold,
+    fontFamily: "Inter_700Bold",
+  },
 
-  // Opponent Bar
-  opponentBar: { maxHeight: 84, borderBottomWidth: 1, borderBottomColor: colors.light.border, backgroundColor: colors.light.card },
-  opponentBarContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, alignItems: "center" },
-  opponentChip: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 16, backgroundColor: colors.light.background, borderWidth: 1, borderColor: colors.light.border, gap: 10, minWidth: 140 },
-  opponentChipActive: { borderColor: colors.light.gold, backgroundColor: colors.light.goldGlow },
-  opponentChipMe: { borderColor: colors.light.accent, backgroundColor: colors.light.emeraldGlow },
-  opponentAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.light.muted, alignItems: "center", justifyContent: "center", position: "relative" },
-  opponentAvatarActive: { backgroundColor: colors.light.gold },
-  opponentAvatarText: { fontSize: 14, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
-  dealerDot: { position: "absolute", bottom: -2, right: -2, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.light.gold, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.light.card },
-  dealerDotText: { fontSize: 8, fontWeight: "700", color: colors.light.background },
-  opponentInfo: { gap: 1 },
-  opponentName: { fontSize: 12, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
-  opponentSubRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  opponentScore: { fontSize: 10, fontWeight: "600", color: colors.light.gold, fontFamily: "Inter_600SemiBold" },
-  opponentBidStatus: { fontSize: 10, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },
+  // Game Status Banner
+  statusBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(30, 41, 59, 0.9)",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.light.border,
+    gap: 10,
+  },
+  statusBarText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    fontFamily: "Inter_600SemiBold",
+  },
 
-  // Central Table
-  tableArea: { flex: 1, backgroundColor: colors.light.tableGreen, margin: 10, borderRadius: 24, borderWidth: 2, borderColor: "#1A4030", justifyContent: "center", alignItems: "center", overflow: "hidden", position: "relative" },
-  tableInnerRing: { position: "absolute", top: 12, left: 12, right: 12, bottom: 12, borderRadius: 16, borderWidth: 1, borderColor: "rgba(212, 175, 55, 0.2)", borderStyle: "dashed" },
-  tableCenter: { alignItems: "center", justifyContent: "center", padding: 20, gap: 14 },
-  dealingVisual: { alignItems: "center", gap: 10 },
-  dealingCardStack: { fontSize: 56 },
-  dealingTitle: { fontSize: 16, fontWeight: "700", color: "#C8E6D8", fontFamily: "Inter_700Bold", textAlign: "center" },
-  dealingSubtitle: { fontSize: 13, color: "#6EAB8B", fontFamily: "Inter_400Regular", textAlign: "center" },
-  trickLabel: { fontSize: 11, fontWeight: "700", color: "#6EAB8B", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 2 },
-  trickCards: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "center", alignItems: "center", minHeight: 110 },
-  trickCard: { backgroundColor: "#FFFFFF", borderRadius: 12, width: 76, height: 106, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 6, borderWidth: 1, borderColor: "#E8E8E8" },
-  trickCardInitialBadge: { position: "absolute", top: 6, left: 6, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.light.goldGlow, alignItems: "center", justifyContent: "center" },
-  trickCardInitial: { fontSize: 10, fontWeight: "700", color: colors.light.gold, fontFamily: "Inter_700Bold" },
-  trickCardValue: { fontSize: 26, fontWeight: "700", color: "#1A1A2E", fontFamily: "Inter_700Bold" },
-  trickCardPlayer: { fontSize: 9, color: "#888", marginTop: 4, fontFamily: "Inter_400Regular" },
-  noTrickText: { fontSize: 14, color: "#6EAB8B", fontStyle: "italic" },
+  // Central Table REDESIGN
+  tableArea: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "transparent",
+  },
+  tableContainer: {
+    width: 340,
+    height: 340,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  roundTable: {
+    width: 210,
+    height: 210,
+    borderRadius: 105,
+    backgroundColor: colors.light.tableGreen || "#1A4030",
+    borderWidth: 6,
+    borderColor: "#102F22",
+    position: "absolute",
+    top: 65,
+    left: 65,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  tableCenterDealing: {
+    position: "absolute",
+    top: 110,
+    left: 110,
+    width: 120,
+    height: 120,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tableCenterEmoji: {
+    fontSize: 24,
+  },
+  tableCenterText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#6EAB8B",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+    textAlign: "center",
+    marginTop: 2,
+  },
+  tablePlayedCard: {
+    position: "absolute",
+    width: 42,
+    height: 58,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  tablePlayedCardValue: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1A1A2E",
+  },
+  tablePlayedCardWinning: {
+    borderColor: colors.light.gold,
+    borderWidth: 2.5,
+    shadowColor: colors.light.gold,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  winningCardCrown: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.light.gold,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+  },
+
+  // Player Slot Info
+  playerSlot: {
+    position: "absolute",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 80,
+    height: 75,
+    backgroundColor: "rgba(30, 41, 59, 0.85)",
+    borderRadius: 12,
+    borderWidth: 0,
+    borderColor: "transparent",
+    padding: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  playerSlotActive: {
+    borderColor: colors.light.gold,
+    backgroundColor: "rgba(212, 175, 55, 0.15)",
+    borderWidth: 2,
+  },
+  playerSlotMe: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+  },
+  playerSlotAvatarContainer: {
+    position: "relative",
+    width: 32,
+    height: 32,
+    marginBottom: 4,
+  },
+  playerSlotAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  playerSlotAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.light.muted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarPlaceholderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.light.foreground,
+  },
+  slotDealerDot: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.light.gold,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.light.card,
+  },
+  slotDealerDotText: {
+    fontSize: 7,
+    fontWeight: "700",
+    color: colors.light.background,
+  },
+  playerSlotInfo: {
+    alignItems: "center",
+    width: "100%",
+  },
+  playerSlotName: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textAlign: "center",
+  },
+  playerSlotPoints: {
+    fontSize: 8,
+    fontWeight: "600",
+    color: colors.light.gold,
+    textAlign: "center",
+    marginTop: 1,
+  },
+
+  // Scores Modal Styles
+  scoreModalCard: {
+    backgroundColor: colors.light.card,
+    borderRadius: 24,
+    padding: 24,
+    width: "100%",
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: colors.light.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  scoreModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 20,
+  },
+  scoreModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.light.foreground,
+    fontFamily: "Inter_700Bold",
+  },
+  scoreModalTable: {
+    gap: 8,
+    marginBottom: 20,
+  },
+  scoreModalHeaderRow: {
+    flexDirection: "row",
+    paddingHorizontal: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.light.border,
+  },
+  scoreModalHeaderCell: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+    color: colors.light.mutedForeground,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+  },
+  scoreModalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.light.background,
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: colors.light.border,
+  },
+  scoreModalRowMe: {
+    borderColor: colors.light.gold,
+    backgroundColor: "rgba(212, 175, 55, 0.05)",
+  },
+  scoreModalCellText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.light.foreground,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+  },
+  scoreModalAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  scoreModalAvatarPlaceholder: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.light.muted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scoreModalAvatarText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: colors.light.foreground,
+  },
+  scoreModalCloseBtn: {
+    backgroundColor: colors.light.gold,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scoreModalCloseText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.light.background,
+    fontFamily: "Inter_700Bold",
+  },
 
   // Hand Panel
   handPanel: { backgroundColor: colors.light.card, borderTopWidth: 1, borderTopColor: colors.light.border, padding: 14, gap: 8 },

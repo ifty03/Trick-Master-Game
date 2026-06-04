@@ -81,7 +81,7 @@ export default function RoomScreen() {
   useGameSocket("room", id, {
     onRoomUpdate: (payload) => {
       const updated = payload as Room;
-      if (updated.status === "deleted") {
+      if ((updated.status as string) === "deleted") {
         Alert.alert("Room Deleted", "This room was deleted because the game did not start within 10 minutes.");
         router.replace("/(home)/lobby");
         return;
