@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  AppState,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useUser } from "@clerk/expo";
@@ -18,6 +19,8 @@ import * as Haptics from "expo-haptics";
 import colors from "@/constants/colors";
 import { useAuthContext } from "@/context/AuthContext";
 import { useGameSocket } from "@/hooks/useGameSocket";
+import { useRoomVoice } from "@/hooks/useRoomVoice";
+import { useVoiceSettings } from "@/lib/voiceHelper";
 import { apiFetch, ApiError } from "@/lib/api";
 import { navigateToGameWhenReady } from "@/lib/navigation";
 import type { Room, RoomPlayer } from "@/types/game";
@@ -32,6 +35,7 @@ export default function RoomScreen() {
   const { user } = useUser();
   const { isSocketReady } = useAuthContext();
   const insets = useSafeAreaInsets();
+  const { isMuted, setMuted } = useVoiceSettings();
 
   const [room, setRoom] = useState<Room | null>(null);
   const [players, setPlayers] = useState<RoomPlayer[]>([]);
@@ -64,9 +68,24 @@ export default function RoomScreen() {
     fetchRoom();
   }, [fetchRoom]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        console.log("[RoomScreen] App resumed to foreground, fetching room state...");
+        fetchRoom();
+      }
+    });
+    return () => subscription.remove();
+  }, [fetchRoom]);
+
   useGameSocket("room", id, {
     onRoomUpdate: (payload) => {
       const updated = payload as Room;
+      if (updated.status === "deleted") {
+        Alert.alert("Room Deleted", "This room was deleted because the game did not start within 10 minutes.");
+        router.replace("/(home)/lobby");
+        return;
+      }
       setRoom((prev) => (prev ? { ...prev, ...updated } : updated));
       if (updated.status === "playing") {
         navigateToGameWhenReady(id!, router);
@@ -77,8 +96,10 @@ export default function RoomScreen() {
     },
   });
 
+  useRoomVoice(room, players, user?.id ?? "");
+
   const isCreator = room?.creator_id === user?.id;
-  const canStart = players.length >= 3 && players.length <= 10;
+  const canStart = players.length >= 2 && players.length <= 10;
 
   const startGame = async () => {
     if (!room || !canStart || !id) return;
@@ -122,13 +143,25 @@ export default function RoomScreen() {
 
       <View style={styles.header}>
         <Pressable onPress={leaveRoom} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={colors.light.foreground} />
+          <Ionicons name="arrow-back" size={18} color={colors.light.foreground} />
         </Pressable>
         <View style={styles.headerCenter}>
           <Text style={styles.roomName}>{room?.name}</Text>
           <Text style={styles.roomMeta}>{room?.cards_per_player} cards · {room?.total_rounds} rounds</Text>
         </View>
-        <View style={{ width: 40 }} />
+        <Pressable
+          onPress={() => setMuted(!isMuted)}
+          style={({ pressed }) => [
+            styles.muteButton,
+            pressed && { opacity: 0.8 },
+          ]}
+        >
+          <Ionicons
+            name={isMuted ? "volume-mute" : "volume-high"}
+            size={20}
+            color={isMuted ? colors.light.mutedForeground : colors.light.gold}
+          />
+        </Pressable>
       </View>
 
       {room?.short_id && (
@@ -203,7 +236,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.light.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12 },
-  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: colors.light.card },
+  backBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.light.cardElevated, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.light.border },
+  muteButton: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.light.cardElevated, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.light.border },
   headerCenter: { flex: 1, alignItems: "center" },
   roomName: { fontSize: 20, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
   roomMeta: { fontSize: 12, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },

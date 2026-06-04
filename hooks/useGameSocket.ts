@@ -25,8 +25,16 @@ export function useGameSocket(
       joinLobby();
       const onLobby = () => handlers.onLobbyUpdate?.();
       socket.on("lobby:updated", onLobby);
+
+      const handleConnect = () => {
+        console.log("[useGameSocket] Lobby socket connected/reconnected, re-joining lobby");
+        joinLobby();
+      };
+      socket.on("connect", handleConnect);
+
       return () => {
         socket.off("lobby:updated", onLobby);
+        socket.off("connect", handleConnect);
       };
     }
 
@@ -42,10 +50,17 @@ export function useGameSocket(
     socket.on("room:players", onPlayers);
     socket.on("game:state", onGame);
 
+    const handleConnect = () => {
+      console.log(`[useGameSocket] Room socket connected/reconnected, re-joining room: ${roomId}`);
+      joinRoomChannel(roomId);
+    };
+    socket.on("connect", handleConnect);
+
     return () => {
       socket.off("room:updated", onRoom);
       socket.off("room:players", onPlayers);
       socket.off("game:state", onGame);
+      socket.off("connect", handleConnect);
       leaveRoomChannel(roomId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

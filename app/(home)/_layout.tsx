@@ -14,6 +14,8 @@ export default function HomeLayout() {
         <Stack.Screen name="room/[id]" />
         <Stack.Screen name="game/[id]" />
         <Stack.Screen name="leaderboard/[id]" />
+        <Stack.Screen name="history" />
+        <Stack.Screen name="settings" />
       </Stack>
     </AuthProvider>
   );

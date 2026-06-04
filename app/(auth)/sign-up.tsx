@@ -31,6 +31,7 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   const onSelectAuth = async () => {
     try {
@@ -40,9 +41,14 @@ export default function SignUpScreen() {
       if (createdSessionId && setActive) {
         setActive({ session: createdSessionId });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("OAuth error", err);
-      setGeneralError("Failed to authenticate with Google");
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes("No matching browser activity") || errMsg.includes("openBrowserAsync")) {
+        setGeneralError("No web browser detected on this device. Please install or enable a web browser (e.g., Google Chrome) to use Google Sign In.");
+      } else {
+        setGeneralError("Failed to authenticate with Google");
+      }
     }
   };
 
@@ -54,7 +60,10 @@ export default function SignUpScreen() {
         console.error("sign-up error:", JSON.stringify(error));
         return;
       }
-      if (!error) await signUp.verifications.sendEmailCode();
+      if (!error) {
+        await signUp.verifications.sendEmailCode();
+        setVerifying(true);
+      }
     } catch (e: any) {
       console.error("sign-up exception:", e);
       setGeneralError(e?.message || "Sign up failed. Please try again.");
@@ -74,7 +83,20 @@ export default function SignUpScreen() {
     }
   };
 
+  const handleStartOver = async () => {
+    try {
+      await signUp.reset();
+      setVerifying(false);
+      setVerificationCode("");
+      setGeneralError(null);
+    } catch (e) {
+      console.error("Reset signup error:", e);
+      setVerifying(false);
+    }
+  };
+
   if (
+    verifying &&
     signUp.status === "missing_requirements" &&
     signUp.unverifiedFields?.includes("email_address") &&
     signUp.missingFields?.length === 0
@@ -131,6 +153,9 @@ export default function SignUpScreen() {
 
             <Pressable onPress={() => signUp.verifications.sendEmailCode()} style={styles.secondaryBtn}>
               <Text style={styles.secondaryBtnText}>Resend code</Text>
+            </Pressable>
+            <Pressable onPress={handleStartOver} style={styles.secondaryBtn}>
+              <Text style={styles.secondaryBtnText}>Back to Sign Up</Text>
             </Pressable>
           </View>
 

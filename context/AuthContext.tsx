@@ -43,15 +43,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const setup = async () => {
       try {
+        const email = user.emailAddresses[0]?.emailAddress || "";
         const username =
-          user.username ||
           user.firstName ||
-          user.emailAddresses[0]?.emailAddress?.split("@")[0] ||
+          user.username ||
+          email.split("@")[0] ||
           "Player";
 
         const data = await apiFetch<Profile>("/profiles/sync", {
           method: "POST",
-          body: JSON.stringify({ username }),
+          body: JSON.stringify({ username, email, avatarUrl: user.imageUrl }),
         });
         setProfile(data);
 

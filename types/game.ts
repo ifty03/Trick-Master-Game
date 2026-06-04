@@ -5,6 +5,8 @@ export interface Profile {
   id: string;
   clerk_user_id: string;
   username: string;
+  email?: string;
+  avatar_url?: string;
   created_at: string;
 }
 
@@ -27,6 +29,7 @@ export interface RoomPlayer {
   room_id: string;
   clerk_user_id: string;
   username: string;
+  avatar_url?: string;
   seat_order: number;
   joined_at: string;
 }

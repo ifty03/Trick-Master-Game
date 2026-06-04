@@ -57,13 +57,14 @@
   },
   "dependencies": {
     "@clerk/expo": "^3.2.11",
-    "socket.io-client": "^4.8.1",
     "expo": "~54.0.34",
     "expo-application": "~7.0.8",
     "expo-auth-session": "~7.0.11",
     "expo-crypto": "~15.0.9",
     "expo-secure-store": "~15.0.8",
+    "expo-speech": "^56.0.3",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "socket.io-client": "^4.8.1"
   }
 }

@@ -11,6 +11,9 @@ import {
   RefreshControl,
   Platform,
   Alert,
+  ScrollView,
+  KeyboardAvoidingView,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth, useUser } from "@clerk/expo";
@@ -51,8 +54,8 @@ export default function LobbyScreen() {
   const [searching, setSearching] = useState(false);
 
   const displayName =
-    user?.username ||
     user?.firstName ||
+    user?.username ||
     user?.emailAddresses[0]?.emailAddress?.split("@")[0] ||
     "Player";
 
@@ -156,9 +159,8 @@ export default function LobbyScreen() {
 
   const renderRoom = ({ item }: { item: Room }) => {
     const roomPrivate = !!item.password;
-    const gradientColors: [string, string] = roomPrivate
-      ? ["#1E1628", "#1A1230"]
-      : ["#0F1E28", "#0E1824"];
+    const accentColor = roomPrivate ? colors.light.gold : colors.light.accent;
+    const glowColor = roomPrivate ? colors.light.goldGlow : colors.light.emeraldGlow;
 
     return (
       <Pressable
@@ -166,47 +168,45 @@ export default function LobbyScreen() {
         onPress={() => handleRoomPress(item)}
       >
         <LinearGradient
-          colors={gradientColors}
+          colors={roomPrivate ? ["#1E1628", "#1A1230"] : ["#0F1E28", "#0E1824"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.roomCardGradient}
         >
-          <View style={[styles.roomAccentLine, { backgroundColor: roomPrivate ? colors.light.gold : colors.light.accent }]} />
+          {/* Decorative suit watermark */}
+          <Text style={[styles.roomSuitDecor, { color: accentColor }]}>{roomPrivate ? "♦" : "♠"}</Text>
+
+          {/* Top accent line */}
+          <View style={[styles.roomAccentLine, { backgroundColor: accentColor }]} />
+
+          {/* Card body */}
           <View style={styles.roomCardBody}>
             <View style={styles.roomCardLeft}>
-              <View style={[styles.roomIconBg, roomPrivate && styles.roomIconBgPrivate]}>
-                {roomPrivate ? (
-                  <Ionicons name="lock-closed" size={20} color={colors.light.gold} />
-                ) : (
-                  <Ionicons name="card" size={20} color={colors.light.accent} />
-                )}
+              <View style={[styles.roomIconBg, { backgroundColor: glowColor, borderColor: accentColor + "30" }]}>
+                <Ionicons name={roomPrivate ? "lock-closed" : "card"} size={20} color={accentColor} />
               </View>
               <View style={styles.roomCardInfo}>
-                <Text style={styles.roomName}>{item.name}</Text>
-                <View style={styles.roomMetaRow}>
+                <Text style={styles.roomName} numberOfLines={1}>{item.name}</Text>
+                <View style={styles.roomChipsRow}>
                   {item.short_id && (
-                    <View style={[styles.codeBadge, roomPrivate && styles.codeBadgePrivate]}>
-                      <Text style={[styles.codeText, roomPrivate && { color: colors.light.goldLight }]}>{item.short_id}</Text>
+                    <View style={[styles.roomChip, { backgroundColor: glowColor, borderColor: accentColor + "25" }]}>
+                      <Text style={[styles.roomChipText, { color: accentColor }]}>{item.short_id}</Text>
                     </View>
                   )}
-                  <Text style={styles.roomMeta}>
-                    {item.cards_per_player} cards · {item.total_rounds} rounds
-                  </Text>
+                  <View style={styles.roomChip}>
+                    <Text style={styles.roomChipText}>🃏 {item.cards_per_player}</Text>
+                  </View>
+                  <View style={styles.roomChip}>
+                    <Text style={styles.roomChipText}>🔄 {item.total_rounds}</Text>
+                  </View>
                 </View>
               </View>
             </View>
-            <View style={[styles.joinPill, roomPrivate && styles.joinPillPrivate]}>
-              <Text style={[styles.joinPillText, roomPrivate && { color: colors.light.gold }]}>
-                {roomPrivate ? "Unlock" : "Join"}
-              </Text>
-              <Ionicons
-                name={roomPrivate ? "key" : "arrow-forward"}
-                size={14}
-                color={roomPrivate ? colors.light.gold : colors.light.accent}
-              />
+            <View style={[styles.joinPill, { backgroundColor: glowColor, borderColor: accentColor + "30" }]}>
+              <Text style={[styles.joinPillText, { color: accentColor }]}>{roomPrivate ? "Unlock" : "Join"}</Text>
+              <Ionicons name={roomPrivate ? "key" : "arrow-forward"} size={14} color={accentColor} />
             </View>
           </View>
-          <Text style={styles.roomSuitDecor}>{roomPrivate ? "♦" : "♠"}</Text>
         </LinearGradient>
       </Pressable>
     );
@@ -219,44 +219,75 @@ export default function LobbyScreen() {
         style={StyleSheet.absoluteFill}
       />
 
+      {/* Header — clean: avatar+name on left, history icon on right */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Welcome back</Text>
-          <Text style={styles.username}>{displayName}</Text>
+        <View style={styles.userInfoRow}>
+          <Pressable onPress={() => router.push("/(home)/settings")} style={styles.avatarBtn}>
+            {user?.imageUrl ? (
+              <Image source={{ uri: user.imageUrl }} style={{ width: "100%", height: "100%", borderRadius: 22 }} />
+            ) : (
+              <LinearGradient colors={[colors.light.gold, colors.light.goldLight]} style={styles.avatarGradient}>
+                <Text style={styles.avatarText}>{displayName ? displayName.charAt(0).toUpperCase() : "P"}</Text>
+              </LinearGradient>
+            )}
+          </Pressable>
+          <View>
+            <Text style={styles.greeting}>Welcome back</Text>
+            <Text style={styles.username}>{displayName}</Text>
+          </View>
         </View>
-        <Pressable onPress={() => signOut()} style={styles.signOutBtn}>
-          <Ionicons name="log-out-outline" size={24} color={colors.light.mutedForeground} />
+        <Pressable onPress={() => router.push("/(home)/history")} style={styles.headerBtn}>
+          <Ionicons name="time-outline" size={22} color={colors.light.mutedForeground} />
         </Pressable>
       </View>
 
+      {/* Hero Action Banner — Create + Join by Code grouped */}
+      <View style={styles.heroBanner}>
+        <LinearGradient colors={["#1A1545", "#12162E"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroBannerGradient}>
+          <Text style={styles.heroSuitWatermark}>♠ ♥ ♦ ♣</Text>
+          <View style={styles.heroContent}>
+            <View style={styles.heroTextCol}>
+              <Text style={styles.heroTitle}>Ready to Play?</Text>
+              <Text style={styles.heroSubtitle}>Create a new table or join with a code</Text>
+            </View>
+            <Pressable style={({ pressed }) => [styles.heroCreateBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] }]} onPress={() => setShowCreateModal(true)}>
+              <Ionicons name="add-circle" size={20} color={colors.light.background} />
+              <Text style={styles.heroCreateBtnText}>New Game</Text>
+            </Pressable>
+          </View>
+          <View style={styles.heroSearchRow}>
+            <View style={styles.heroSearchPill}>
+              <Ionicons name="key-outline" size={16} color={colors.light.mutedForeground} />
+              <TextInput
+                style={styles.heroSearchInput}
+                placeholder="Enter room code"
+                placeholderTextColor={colors.light.mutedForeground}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="characters"
+                maxLength={6}
+                onSubmitEditing={handleSearch}
+                returnKeyType="search"
+              />
+              {searching ? (
+                <ActivityIndicator size="small" color={colors.light.gold} />
+              ) : searchQuery.length > 0 ? (
+                <Pressable onPress={handleSearch} style={styles.heroSearchGo}>
+                  <Ionicons name="arrow-forward" size={16} color={colors.light.background} />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        </LinearGradient>
+      </View>
+
+      {/* Section title */}
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <Ionicons name="game-controller" size={18} color={colors.light.gold} />
-          <Text style={styles.sectionTitle}>Open Rooms</Text>
+          <Ionicons name="game-controller" size={16} color={colors.light.gold} />
+          <Text style={styles.sectionTitle}>Open Tables</Text>
         </View>
-        <Pressable
-          style={({ pressed }) => [styles.createBtn, pressed && styles.createBtnPressed]}
-          onPress={() => setShowCreateModal(true)}
-        >
-          <Ionicons name="add" size={18} color={colors.light.background} />
-          <Text style={styles.createBtnText}>Create</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={colors.light.mutedForeground} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Enter 6-letter Room Code"
-          placeholderTextColor={colors.light.mutedForeground}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="characters"
-          maxLength={6}
-          onSubmitEditing={handleSearch}
-          returnKeyType="search"
-        />
-        {searching && <ActivityIndicator size="small" color={colors.light.gold} style={styles.searchLoading} />}
+        <Text style={styles.roomCount}>{rooms.length} {rooms.length === 1 ? "room" : "rooms"}</Text>
       </View>
 
       <FlatList
@@ -297,107 +328,121 @@ export default function LobbyScreen() {
       />
 
       <Modal visible={showCreateModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>New Room</Text>
-            <Text style={styles.modalLabel}>Room Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={roomName}
-              onChangeText={setRoomName}
-              placeholder="e.g. Friday Night Game"
-              placeholderTextColor={colors.light.mutedForeground}
-              autoFocus
-            />
-            <View style={styles.switchRow}>
-              <View style={styles.switchLabelRow}>
-                <Ionicons name="lock-closed" size={16} color={colors.light.mutedForeground} />
-                <Text style={styles.modalLabel}>Private Room</Text>
-              </View>
-              <Pressable style={[styles.switch, isPrivate && styles.switchOn]} onPress={() => setIsPrivate(!isPrivate)}>
-                <View style={[styles.switchThumb, isPrivate && styles.switchThumbOn]} />
-              </Pressable>
-            </View>
-            {isPrivate && (
-              <TextInput
-                style={styles.modalInput}
-                value={createPassword}
-                onChangeText={setCreatePassword}
-                placeholder="Room Password"
-                placeholderTextColor={colors.light.mutedForeground}
-                secureTextEntry
-              />
-            )}
-            <Text style={styles.modalLabel}>Cards per Player</Text>
-            <View style={styles.stepper}>
-              <Pressable onPress={() => setCardsPerPlayer(Math.max(10, cardsPerPlayer - 1))} style={styles.stepBtn}>
-                <Ionicons name="remove" size={20} color={colors.light.foreground} />
-              </Pressable>
-              <View style={styles.stepValueBg}>
-                <Text style={styles.stepValue}>{cardsPerPlayer}</Text>
-              </View>
-              <Pressable onPress={() => setCardsPerPlayer(Math.min(15, cardsPerPlayer + 1))} style={styles.stepBtn}>
-                <Ionicons name="add" size={20} color={colors.light.foreground} />
-              </Pressable>
-            </View>
-            <Text style={styles.modalLabel}>Total Rounds</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={totalRounds.toString()}
-              onChangeText={(v) => setTotalRounds(Math.max(1, parseInt(v) || 1))}
-              keyboardType="number-pad"
-            />
-            <View style={styles.hintRow}>
-              <Ionicons name="people" size={14} color={colors.light.mutedForeground} />
-              <Text style={styles.modalHint}>Requires 3-10 players to start</Text>
-            </View>
-            <View style={styles.modalButtons}>
-              <Pressable onPress={() => setShowCreateModal(false)} style={styles.modalCancelBtn}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                onPress={createRoom}
-                disabled={!roomName.trim() || creating}
-                style={[styles.modalCreateBtn, (!roomName.trim() || creating) && styles.buttonDisabled]}
-              >
-                {creating ? (
-                  <ActivityIndicator color={colors.light.background} size="small" />
-                ) : (
-                  <Text style={styles.modalCreateText}>Create Room</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20, maxHeight: "90%" }]}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>New Room</Text>
+              
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <Text style={styles.modalLabel}>Room Name</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={roomName}
+                  onChangeText={setRoomName}
+                  placeholder="e.g. Friday Night Game"
+                  placeholderTextColor={colors.light.mutedForeground}
+                  autoFocus
+                />
+                <View style={styles.switchRow}>
+                  <View style={styles.switchLabelRow}>
+                    <Ionicons name="lock-closed" size={16} color={colors.light.mutedForeground} />
+                    <Text style={styles.modalLabel}>Private Room</Text>
+                  </View>
+                  <Pressable style={[styles.switch, isPrivate && styles.switchOn]} onPress={() => setIsPrivate(!isPrivate)}>
+                    <View style={[styles.switchThumb, isPrivate && styles.switchThumbOn]} />
+                  </Pressable>
+                </View>
+                {isPrivate && (
+                  <TextInput
+                    style={styles.modalInput}
+                    value={createPassword}
+                    onChangeText={setCreatePassword}
+                    placeholder="Room Password"
+                    placeholderTextColor={colors.light.mutedForeground}
+                    secureTextEntry
+                  />
                 )}
-              </Pressable>
+                <Text style={styles.modalLabel}>Cards per Player</Text>
+                <View style={styles.stepper}>
+                  <Pressable onPress={() => setCardsPerPlayer(Math.max(10, cardsPerPlayer - 1))} style={styles.stepBtn}>
+                    <Ionicons name="remove" size={20} color={colors.light.foreground} />
+                  </Pressable>
+                  <View style={styles.stepValueBg}>
+                    <Text style={styles.stepValue}>{cardsPerPlayer}</Text>
+                  </View>
+                  <Pressable onPress={() => setCardsPerPlayer(Math.min(15, cardsPerPlayer + 1))} style={styles.stepBtn}>
+                    <Ionicons name="add" size={20} color={colors.light.foreground} />
+                  </Pressable>
+                </View>
+                <Text style={styles.modalLabel}>Total Rounds</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={totalRounds.toString()}
+                  onChangeText={(v) => setTotalRounds(Number(v))}
+                  keyboardType="number-pad"
+                />
+                <View style={styles.hintRow}>
+                  <Ionicons name="people" size={14} color={colors.light.mutedForeground} />
+                  <Text style={styles.modalHint}>Requires 3-10 players to start</Text>
+                </View>
+              </ScrollView>
+              
+              <View style={styles.modalButtons}>
+                <Pressable onPress={() => setShowCreateModal(false)} style={styles.modalCancelBtn}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={createRoom}
+                  disabled={!roomName.trim() || creating}
+                  style={[styles.modalCreateBtn, (!roomName.trim() || creating) && styles.buttonDisabled]}
+                >
+                  {creating ? (
+                    <ActivityIndicator color={colors.light.background} size="small" />
+                  ) : (
+                    <Text style={styles.modalCreateText}>Create Room</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showPasswordModal} transparent animationType="fade">
-        <View style={[styles.modalOverlay, { justifyContent: "center" }]}>
-          <View style={styles.passwordModalSheet}>
-            <View style={styles.passwordIconCircle}>
-              <Ionicons name="lock-closed" size={24} color={colors.light.gold} />
-            </View>
-            <Text style={styles.modalTitle}>Enter Password</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={joinPassword}
-              onChangeText={setJoinPassword}
-              placeholder="Password"
-              placeholderTextColor={colors.light.mutedForeground}
-              secureTextEntry
-              autoFocus
-            />
-            <View style={styles.modalButtons}>
-              <Pressable onPress={() => setShowPasswordModal(false)} style={styles.modalCancelBtn}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={submitJoinPassword} style={styles.modalCreateBtn}>
-                <Text style={styles.modalCreateText}>Join</Text>
-              </Pressable>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <View style={[styles.modalOverlay, { justifyContent: "center" }]}>
+            <View style={styles.passwordModalSheet}>
+              <View style={styles.passwordIconCircle}>
+                <Ionicons name="lock-closed" size={24} color={colors.light.gold} />
+              </View>
+              <Text style={styles.modalTitle}>Enter Password</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={joinPassword}
+                onChangeText={setJoinPassword}
+                placeholder="Password"
+                placeholderTextColor={colors.light.mutedForeground}
+                secureTextEntry
+                autoFocus
+              />
+              <View style={styles.modalButtons}>
+                <Pressable onPress={() => setShowPasswordModal(false)} style={styles.modalCancelBtn}>
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={submitJoinPassword} style={styles.modalCreateBtn}>
+                  <Text style={styles.modalCreateText}>Join</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -405,44 +450,63 @@ export default function LobbyScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.light.background },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 16 },
-  greeting: { fontSize: 13, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },
-  username: { fontSize: 22, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
-  signOutBtn: { padding: 8, borderRadius: 12, backgroundColor: colors.light.card },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 12 },
+
+  // Header
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14 },
+  userInfoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatarBtn: { width: 44, height: 44, borderRadius: 22, overflow: "hidden" },
+  avatarGradient: { flex: 1, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 18, fontWeight: "700", color: colors.light.background, fontFamily: "Inter_700Bold" },
+  greeting: { fontSize: 12, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },
+  username: { fontSize: 20, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
+  headerBtn: { padding: 10, borderRadius: 14, backgroundColor: colors.light.card, borderWidth: 1, borderColor: colors.light.border },
+
+  // Hero Banner
+  heroBanner: { marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: "hidden" },
+  heroBannerGradient: { padding: 20, borderRadius: 20, borderWidth: 1, borderColor: colors.light.border, position: "relative", overflow: "hidden" },
+  heroSuitWatermark: { position: "absolute", top: -8, right: 12, fontSize: 48, color: colors.light.foreground, opacity: 0.04, fontWeight: "700", letterSpacing: 8 },
+  heroContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  heroTextCol: { flex: 1, gap: 4 },
+  heroTitle: { fontSize: 19, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
+  heroSubtitle: { fontSize: 13, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },
+  heroCreateBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.light.gold, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12 },
+  heroCreateBtnText: { fontSize: 14, fontWeight: "700", color: colors.light.background, fontFamily: "Inter_700Bold" },
+  heroSearchRow: { marginTop: 2 },
+  heroSearchPill: { flexDirection: "row", alignItems: "center", backgroundColor: colors.light.input, borderRadius: 12, borderWidth: 1, borderColor: colors.light.border, paddingHorizontal: 12, gap: 8 },
+  heroSearchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: colors.light.foreground, fontFamily: "Inter_400Regular", letterSpacing: 2 },
+  heroSearchGo: { width: 28, height: 28, borderRadius: 8, backgroundColor: colors.light.gold, alignItems: "center", justifyContent: "center" },
+
+  // Section Header
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 10 },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
-  createBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.light.gold, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
-  createBtnPressed: { opacity: 0.8, transform: [{ scale: 0.96 }] },
-  createBtnText: { fontSize: 14, fontWeight: "600", color: colors.light.background, fontFamily: "Inter_600SemiBold" },
-  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: colors.light.card, marginHorizontal: 20, marginBottom: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.light.border, paddingHorizontal: 12 },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 16, color: colors.light.foreground, fontFamily: "Inter_400Regular", letterSpacing: 2 },
-  searchLoading: { marginLeft: 8 },
-  list: { paddingHorizontal: 20, paddingBottom: 40, gap: 14 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
+  roomCount: { fontSize: 12, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },
+
+  // Room Cards
+  list: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
   roomCard: { borderRadius: 18, overflow: "hidden" },
-  roomCardPressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
+  roomCardPressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
   roomCardGradient: { borderRadius: 18, borderWidth: 1, borderColor: colors.light.border, padding: 16, position: "relative", overflow: "hidden" },
   roomAccentLine: { position: "absolute", top: 0, left: 0, right: 0, height: 3, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+  roomSuitDecor: { position: "absolute", bottom: -4, right: 10, fontSize: 52, opacity: 0.06, fontWeight: "700" },
   roomCardBody: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  roomCardLeft: { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
-  roomIconBg: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.light.emeraldGlow, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: `${colors.light.accent}30` },
-  roomIconBgPrivate: { backgroundColor: colors.light.goldGlow, borderColor: `${colors.light.gold}30` },
-  roomCardInfo: { flex: 1, gap: 5 },
-  roomName: { fontSize: 16, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
-  roomMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  codeBadge: { backgroundColor: colors.light.emeraldGlow, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: `${colors.light.accent}25` },
-  codeBadgePrivate: { backgroundColor: colors.light.goldGlow, borderColor: `${colors.light.gold}25` },
-  codeText: { fontSize: 10, fontWeight: "700", color: colors.light.accent, fontFamily: "Inter_700Bold", letterSpacing: 1.5 },
-  roomMeta: { fontSize: 12, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular" },
-  joinPill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.light.emeraldGlow, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: `${colors.light.accent}30` },
-  joinPillPrivate: { backgroundColor: colors.light.goldGlow, borderColor: `${colors.light.gold}30` },
-  joinPillText: { fontSize: 12, fontWeight: "600", color: colors.light.accent, fontFamily: "Inter_600SemiBold" },
-  roomSuitDecor: { position: "absolute", bottom: 6, right: 12, fontSize: 40, color: colors.light.foreground, opacity: 0.04, fontWeight: "700" },
-  empty: { alignItems: "center", justifyContent: "center", paddingTop: 80, gap: 12 },
-  emptyIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.light.card, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.light.border },
+  roomCardLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  roomIconBg: { width: 46, height: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  roomCardInfo: { flex: 1, gap: 6 },
+  roomName: { fontSize: 15, fontWeight: "700", color: colors.light.foreground, fontFamily: "Inter_700Bold" },
+  roomChipsRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  roomChip: { backgroundColor: colors.light.muted, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: colors.light.border },
+  roomChipText: { fontSize: 10, fontWeight: "700", color: colors.light.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
+  joinPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  joinPillText: { fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+
+  // Empty State
+  empty: { alignItems: "center", justifyContent: "center", paddingTop: 60, gap: 14 },
+  emptyIconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.light.card, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.light.border },
   emptyTitle: { fontSize: 18, fontWeight: "600", color: colors.light.foreground, fontFamily: "Inter_600SemiBold" },
-  emptyText: { fontSize: 14, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" },
+  emptyText: { fontSize: 14, color: colors.light.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", paddingHorizontal: 40 },
+
+  // Modals
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: colors.light.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, borderWidth: 1, borderBottomWidth: 0, borderColor: colors.light.border },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.light.border, alignSelf: "center", marginBottom: 20 },

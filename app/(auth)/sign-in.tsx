@@ -40,9 +40,14 @@ export default function SignInScreen() {
       if (createdSessionId && setActive) {
         setActive({ session: createdSessionId });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("OAuth error", err);
-      setGeneralError("Failed to authenticate with Google");
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes("No matching browser activity") || errMsg.includes("openBrowserAsync")) {
+        setGeneralError("No web browser detected on this device. Please install or enable a web browser (e.g., Google Chrome) to use Google Sign In.");
+      } else {
+        setGeneralError("Failed to authenticate with Google");
+      }
     }
   };
 
