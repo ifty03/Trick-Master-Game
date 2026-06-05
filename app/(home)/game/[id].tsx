@@ -43,12 +43,12 @@ function HandCards({
   playingCard?: boolean;
 }) {
   const suits = ["♠", "♥", "♣", "♦"];
-  const suitColors = [colors.light.foreground, colors.light.destructive, colors.light.foreground, colors.light.destructive];
+  const suitColors = ["#111827", "#EF4444", "#111827", "#EF4444"];
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.handCards}>
       {hand.map((card, i) => {
-        const suitIdx = i % 4;
+        const suitIdx = card % 4;
         return (
           <Pressable
             key={`${card}-${i}`}
@@ -56,15 +56,46 @@ function HandCards({
             disabled={!playable || playingCard}
             style={({ pressed }) => [
               styles.handCard,
-              i > 0 && { marginLeft: -10 },
+              i > 0 && { marginLeft: -12 },
               !playable && styles.handCardDisabled,
               pressed && playable && styles.handCardPressed,
               playable && styles.handCardPlayable,
             ]}
           >
-            <Text style={[styles.handCardCornerSuit, { color: suitColors[suitIdx] }]}>{suits[suitIdx]}</Text>
-            <Text style={styles.handCardValue}>{card}</Text>
-            <Text style={[styles.handCardBottomSuit, { color: suitColors[suitIdx] }]}>{suits[suitIdx]}</Text>
+            <LinearGradient
+              colors={["#FFFFFF", "#F3EFE0"]}
+              style={StyleSheet.absoluteFillObject}
+            />
+
+            {/* Top-Left Corner Index */}
+            <View style={styles.cardCornerTop}>
+              <Text style={[styles.cornerValue, { color: suitColors[suitIdx] }]}>{card}</Text>
+              <Text style={[styles.cornerSuit, { color: suitColors[suitIdx] }]}>{suits[suitIdx]}</Text>
+            </View>
+
+            {/* Center Watermark */}
+            <View style={styles.centerWatermarkContainer}>
+              <Text style={[styles.centerWatermark, { color: suitColors[suitIdx] }]}>
+                {suits[suitIdx]}
+              </Text>
+            </View>
+
+            {/* Main Center Value */}
+            <Text style={[styles.cardValue, { color: "#111827" }]}>{card}</Text>
+
+            {/* Bottom-Right Corner Index (inverted) */}
+            <View style={styles.cardCornerBottom}>
+              <Text style={[styles.cornerValue, { color: suitColors[suitIdx] }]}>{card}</Text>
+              <Text style={[styles.cornerSuit, { color: suitColors[suitIdx] }]}>{suits[suitIdx]}</Text>
+            </View>
+
+            {/* Disabled Overlay */}
+            {!playable && (
+              <View
+                style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(255, 255, 255, 0.45)" }]}
+                pointerEvents="none"
+              />
+            )}
           </Pressable>
         );
       })}
@@ -210,35 +241,48 @@ export default function GameScreen() {
       const prevTrick = prevState.current_trick || [];
       const nextTrick = nextState.current_trick || [];
 
-      // A trick just completed if the previous state had (players.length - 1) cards, and the new state trick is empty
-      const prevTrickCompleted = prevTrick.length > 0 && prevTrick.length === players.length - 1 && nextTrick.length === 0;
+      // A trick just completed if the previous state had (players.length - 1) or players.length cards, and the new state trick is empty
+      const prevTrickCompleted = prevTrick.length > 0 &&
+        (prevTrick.length === players.length - 1 || prevTrick.length === players.length) &&
+        nextTrick.length === 0;
 
       if (prevTrickCompleted) {
         setIsTrickTransitioning(true);
 
-        // Find which player played the completing card (the current turn seat in prevState)
-        const lastPlayerSeat = prevState.current_turn_seat;
-        const lastPlayer = players.find((p) => p.seat_order === lastPlayerSeat);
+        let fullCompletedTrick = prevTrick;
+        let winnerId = "";
 
-        let playedCard = 0;
-        if (lastPlayer) {
-          const prevHand = prevState.hands[lastPlayer.clerk_user_id] || [];
-          const nextHand = nextState.hands[lastPlayer.clerk_user_id] || [];
-          playedCard = prevHand.find((c) => !nextHand.includes(c)) || 0;
+        if (prevTrick.length === players.length) {
+          const winner = prevTrick.reduce((highest, item) => (item.card > highest.card ? item : highest));
+          winnerId = winner.clerk_user_id;
+        } else {
+          // Find which player played the completing card (the current turn seat in prevState)
+          const lastPlayerSeat = prevState.current_turn_seat;
+          const lastPlayer = players.find((p) => p.seat_order === lastPlayerSeat);
+
+          let playedCard = 0;
+          if (lastPlayer) {
+            const prevHand = prevState.hands[lastPlayer.clerk_user_id] || [];
+            const nextHand = nextState.hands[lastPlayer.clerk_user_id] || [];
+            playedCard = prevHand.find((c) => !nextHand.includes(c)) || 0;
+          }
+
+          if (lastPlayer && playedCard > 0) {
+            const lastPlayedCardObj = {
+              clerk_user_id: lastPlayer.clerk_user_id,
+              username: lastPlayer.username,
+              seat_order: lastPlayer.seat_order,
+              card: playedCard,
+            };
+
+            fullCompletedTrick = [...prevTrick, lastPlayedCardObj];
+            const winner = fullCompletedTrick.reduce((highest, item) => (item.card > highest.card ? item : highest));
+            winnerId = winner.clerk_user_id;
+          }
         }
 
-        if (lastPlayer && playedCard > 0) {
-          const lastPlayedCardObj = {
-            clerk_user_id: lastPlayer.clerk_user_id,
-            username: lastPlayer.username,
-            seat_order: lastPlayer.seat_order,
-            card: playedCard,
-          };
-
-          const fullCompletedTrick = [...prevTrick, lastPlayedCardObj];
-          const winner = fullCompletedTrick.reduce((highest, item) => (item.card > highest.card ? item : highest));
-
-          setCompletedWinnerId(winner.clerk_user_id);
+        if (winnerId) {
+          setCompletedWinnerId(winnerId);
 
           setTimeout(() => {
             setCompletedWinnerId(null);
@@ -469,7 +513,38 @@ export default function GameScreen() {
   };
 
   const playCard = async (card: number) => {
-    if (!id || playingCard || isTrickTransitioning) return;
+    if (!id || playingCard || isTrickTransitioning || !gameState) return;
+Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Save previous state for reverting in case of failure
+    const prevState = gameState;
+
+    const currentUserId = user?.id ?? "";
+    const currentPlayer = players.find((p) => p.clerk_user_id === currentUserId);
+
+    // Construct optimistic hand and trick state
+    const nextHand = (gameState.hands[currentUserId] ?? []).filter((c) => c !== card);
+    const newTrickObj = {
+      clerk_user_id: currentUserId,
+      username: currentPlayer?.username ?? "You",
+      seat_order: currentPlayer?.seat_order ?? 0,
+      card,
+    };
+    const nextTrick = [...(gameState.current_trick || []), newTrickObj];
+
+    // Optimistically update local state
+    setGameState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        hands: {
+          ...prev.hands,
+          [currentUserId]: nextHand,
+        },
+        current_trick: nextTrick,
+        current_turn_seat: -1, // Clear turn indicator locally
+      };
+    });
+
     setPlayingCard(true);
     try {
       const data = await apiFetch<{ game_state: GameState }>(`/game/${id}/play`, {
@@ -477,8 +552,10 @@ export default function GameScreen() {
         body: JSON.stringify({ card }),
       });
       handleSetGameState(data.game_state);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      
     } catch (e) {
+      // Revert to previous state on failure
+      setGameState(prevState);
       Alert.alert("Error", e instanceof ApiError ? e.message : "Failed to play card");
     } finally {
       setPlayingCard(false);
@@ -657,29 +734,49 @@ export default function GameScreen() {
             return (
               <React.Fragment key={p.id}>
                 {/* Played Card */}
-                {gameState.phase === "playing" && playedCardObj && (
-                  <Animated.View 
-                    style={[
-                      styles.tablePlayedCard, 
-                      { 
-                        left: cardLeft, 
-                        top: cardTop,
-                        transform: [
-                          { scale: completedWinnerId === p.clerk_user_id ? trickScale : 1 }
-                        ],
-                        opacity: completedWinnerId ? trickOpacity : 1
-                      },
-                      completedWinnerId === p.clerk_user_id && styles.tablePlayedCardWinning
-                    ]}
-                  >
-                    <Text style={styles.tablePlayedCardValue}>{playedCardObj.card}</Text>
-                    {completedWinnerId === p.clerk_user_id && (
-                      <View style={styles.winningCardCrown}>
-                        <Ionicons name="trophy" size={10} color="#FFFFFF" />
+                {gameState.phase === "playing" && playedCardObj && (() => {
+                  const suits = ["♠", "♥", "♣", "♦"];
+                  const suitColors = ["#111827", "#EF4444", "#111827", "#EF4444"];
+                  const suitIdx = playedCardObj.card % 4;
+                  return (
+                    <Animated.View 
+                      style={[
+                        styles.tablePlayedCard, 
+                        { 
+                          left: cardLeft, 
+                          top: cardTop,
+                          transform: [
+                            { scale: completedWinnerId === p.clerk_user_id ? trickScale : 1 }
+                          ],
+                          opacity: completedWinnerId ? trickOpacity : 1
+                        },
+                        completedWinnerId === p.clerk_user_id && styles.tablePlayedCardWinning
+                      ]}
+                    >
+                      <LinearGradient
+                        colors={["#FFFFFF", "#F3EFE0"]}
+                        style={StyleSheet.absoluteFillObject}
+                      />
+
+                      {/* Small suit watermark in center */}
+                      <View style={styles.tableCardCenterWatermarkContainer}>
+                        <Text style={[styles.tableCardCenterWatermark, { color: suitColors[suitIdx] }]}>
+                          {suits[suitIdx]}
+                        </Text>
                       </View>
-                    )}
-                  </Animated.View>
-                )}
+
+                      <Text style={[styles.tablePlayedCardValue, { color: "#111827" }]}>
+                        {playedCardObj.card}
+                      </Text>
+
+                      {completedWinnerId === p.clerk_user_id && (
+                        <View style={styles.winningCardCrown}>
+                          <Ionicons name="trophy" size={10} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </Animated.View>
+                  );
+                })()}
 
                 {/* Player Slot Info */}
                 <View
@@ -1047,24 +1144,39 @@ const styles = StyleSheet.create({
   },
   tablePlayedCard: {
     position: "absolute",
-    width: 42,
-    height: 58,
+    width: 44,
+    height: 60,
     backgroundColor: "#FFFFFF",
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
-    borderWidth: 1,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 1.5,
     borderColor: "#E2E8F0",
+    overflow: "hidden",
+  },
+  tableCardCenterWatermarkContainer: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    opacity: 0.08,
+  },
+  tableCardCenterWatermark: {
+    fontSize: 30,
   },
   tablePlayedCardValue: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#1A1A2E",
+    color: "#111827",
+    fontFamily: "Inter_800ExtraBold",
   },
   tablePlayedCardWinning: {
     borderColor: colors.light.gold,
@@ -1282,13 +1394,79 @@ const styles = StyleSheet.create({
   collectedPill: { backgroundColor: colors.light.emeraldGlow, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: `${colors.light.win}30` },
   collectedText: { fontSize: 11, color: colors.light.win, fontFamily: "Inter_600SemiBold" },
   handCards: { gap: 0, paddingHorizontal: 8, paddingBottom: 4, alignItems: "center" },
-  handCard: { backgroundColor: "#FAFAF8", borderRadius: 10, width: 68, height: 96, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "#D0D0D0", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 4, elevation: 3, position: "relative" },
-  handCardPlayable: { borderColor: colors.light.gold, shadowColor: colors.light.gold, shadowOpacity: 0.3 },
-  handCardDisabled: { opacity: 0.75 },
-  handCardPressed: { transform: [{ translateY: -10 }], borderColor: colors.light.accent, borderWidth: 2 },
-  handCardCornerSuit: { position: "absolute", top: 6, left: 8, fontSize: 11, fontWeight: "700" },
-  handCardBottomSuit: { position: "absolute", bottom: 6, right: 8, fontSize: 11, fontWeight: "700", transform: [{ rotate: "180deg" }] },
-  handCardValue: { fontSize: 22, fontWeight: "700", color: "#1A1A2E", fontFamily: "Inter_700Bold" },
+  handCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    width: 68,
+    height: 98,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    elevation: 4,
+    position: "relative",
+    overflow: "hidden",
+  },
+  handCardPlayable: {
+    borderColor: "#D4A84B",
+    shadowColor: "#D4A84B",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  handCardDisabled: {
+    borderColor: "#E2E8F0",
+  },
+  handCardPressed: {
+    transform: [{ translateY: -12 }],
+    borderColor: "#2DD4A8",
+    borderWidth: 2,
+  },
+  cardCornerTop: {
+    position: "absolute",
+    top: 6,
+    left: 8,
+    alignItems: "center",
+  },
+  cardCornerBottom: {
+    position: "absolute",
+    bottom: 6,
+    right: 8,
+    alignItems: "center",
+    transform: [{ rotate: "180deg" }],
+  },
+  cornerValue: {
+    fontSize: 10,
+    fontWeight: "700",
+    fontFamily: "Inter_700Bold",
+    lineHeight: 11,
+  },
+  cornerSuit: {
+    fontSize: 9,
+    marginTop: 1,
+  },
+  centerWatermarkContainer: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    opacity: 0.09,
+  },
+  centerWatermark: {
+    fontSize: 44,
+  },
+  cardValue: {
+    fontSize: 22,
+    fontWeight: "800",
+    fontFamily: "Inter_800ExtraBold",
+  },
   noCardsText: { fontSize: 13, color: colors.light.mutedForeground, fontStyle: "italic", alignSelf: "center" },
 
   // Action Panels

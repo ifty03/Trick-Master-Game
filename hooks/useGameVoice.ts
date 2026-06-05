@@ -117,6 +117,34 @@ export function useGameVoice(
             speakHumanLike(`${playerName} played ${lastPlayed.card}.`);
           }
         }
+      } else {
+        // Trick completed: detect the last played card by the player whose turn it was
+        const prevTrickCompleted = prevTrick.length > 0 && prevTrick.length === players.length - 1 && currTrick.length === 0;
+        if (prevTrickCompleted) {
+          const lastPlayerSeat = prev.current_turn_seat;
+          const lastPlayer = players.find((p) => p.seat_order === lastPlayerSeat);
+          let playedCard = 0;
+          if (lastPlayer) {
+            const prevHand = prev.hands[lastPlayer.clerk_user_id] || [];
+            const nextHand = gameState.hands[lastPlayer.clerk_user_id] || [];
+            playedCard = prevHand.find((c) => !nextHand.includes(c)) || 0;
+          }
+
+          if (lastPlayer && playedCard > 0) {
+            const playerName = lastPlayer.clerk_user_id === myUserId ? "You" : lastPlayer.username;
+            const totalCardsInGame = players.length * (room?.cards_per_player || 5);
+            const maxCardVal = totalCardsInGame * 5;
+            if (playedCard >= maxCardVal * 0.85) {
+              speakHumanLike(`${playerName} played a massive ${playedCard}! Boom, drop the hammer!`);
+            } else if (playedCard >= maxCardVal * 0.6) {
+              speakHumanLike(`${playerName} played a powerful ${playedCard}! Nice one!`);
+            } else if (playedCard <= 10) {
+              speakHumanLike(`${playerName} played a low ${playedCard}.`);
+            } else {
+              speakHumanLike(`${playerName} played ${playedCard}.`);
+            }
+          }
+        }
       }
 
       // Check if someone collected a trick (tricks_collected count increased)
@@ -139,7 +167,7 @@ export function useGameVoice(
         announcePlayTurn(gameState, players, myUserId);
       }
     }
-  }, [gameState, players, myUserId]);
+  }, [gameState, players, myUserId, room]);
 }
 
 function announceBidTurn(

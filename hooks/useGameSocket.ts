@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getSocket, joinLobby, joinRoomChannel, leaveRoomChannel } from "@/lib/socket";
 import { useAuthContext } from "@/context/AuthContext";
 
@@ -15,6 +15,11 @@ export function useGameSocket(
   handlers: Handlers
 ) {
   const { isSocketReady } = useAuthContext();
+  const handlersRef = useRef(handlers);
+
+  useEffect(() => {
+    handlersRef.current = handlers;
+  }, [handlers]);
 
   useEffect(() => {
     if (!isSocketReady) return;
@@ -23,7 +28,7 @@ export function useGameSocket(
 
     if (scope === "lobby") {
       joinLobby();
-      const onLobby = () => handlers.onLobbyUpdate?.();
+      const onLobby = () => handlersRef.current.onLobbyUpdate?.();
       socket.on("lobby:updated", onLobby);
 
       const handleConnect = () => {
@@ -42,9 +47,9 @@ export function useGameSocket(
 
     joinRoomChannel(roomId);
 
-    const onRoom = (payload: unknown) => handlers.onRoomUpdate?.(payload);
-    const onPlayers = (players: unknown) => handlers.onRoomPlayers?.(players);
-    const onGame = (gameState: unknown) => handlers.onGameState?.(gameState);
+    const onRoom = (payload: unknown) => handlersRef.current.onRoomUpdate?.(payload);
+    const onPlayers = (players: unknown) => handlersRef.current.onRoomPlayers?.(players);
+    const onGame = (gameState: unknown) => handlersRef.current.onGameState?.(gameState);
 
     socket.on("room:updated", onRoom);
     socket.on("room:players", onPlayers);
@@ -66,3 +71,4 @@ export function useGameSocket(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, roomId, isSocketReady]);
 }
+
