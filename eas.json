@@ -17,7 +17,12 @@
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bWVycnktbG9uZ2hvcm4tOTIuY2xlcmsuYWNjb3VudHMuZGV2JA"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://trick-master-game-server.onrender.com",
+        "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_bWVycnktbG9uZ2hvcm4tOTIuY2xlcmsuYWNjb3VudHMuZGV2JA"
+      }
+    }
   },
   "submit": {
     "production": {}

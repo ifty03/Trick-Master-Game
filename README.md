@@ -1,4 +1,4 @@
-# TrickMaster
+# Trick Master
 
 A multiplayer trick-taking card game built as a React Native (Expo) mobile app with a Node.js + MongoDB backend.
 

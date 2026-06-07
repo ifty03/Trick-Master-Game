@@ -29,6 +29,7 @@ import { useGameVoice } from "@/hooks/useGameVoice";
 import { useVoiceSettings } from "@/lib/voiceHelper";
 import { apiFetch, ApiError } from "@/lib/api";
 import { sortHand, phaseLabel } from "@/lib/gameLogic";
+import { useKeepAwake } from "expo-keep-awake";
 import type { GameState, Room, RoomPlayer } from "@/types/game";
 
 function HandCards({
@@ -163,6 +164,7 @@ function FloatingEmoji({ char, delay, startX }: AnimatedEmojiProps) {
 }
 
 export default function GameScreen() {
+  useKeepAwake();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigation = useNavigation();
@@ -943,28 +945,34 @@ Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   <Text style={styles.scoreModalHeaderCell}>Seat</Text>
                   <Text style={[styles.scoreModalHeaderCell, { textAlign: "right" }]}>Score</Text>
                 </View>
-                {players.map((p) => {
-                  const score = gameState.scores[p.clerk_user_id] ?? 0;
-                  const isMe = p.clerk_user_id === myUserId;
-                  return (
-                    <View key={p.id} style={[styles.scoreModalRow, isMe && styles.scoreModalRowMe]}>
-                      <View style={{ flex: 2, flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        {p.avatar_url ? (
-                          <Image source={{ uri: p.avatar_url }} style={styles.scoreModalAvatar} />
-                        ) : (
-                          <View style={styles.scoreModalAvatarPlaceholder}>
-                            <Text style={styles.scoreModalAvatarText}>{p.username.charAt(0).toUpperCase()}</Text>
-                          </View>
-                        )}
-                        <Text style={[styles.scoreModalCellText, { textAlign: "left" }, isMe && { fontWeight: "700", color: colors.light.gold }]} numberOfLines={1}>
-                          {isMe ? "You" : p.username}
-                        </Text>
+                {[...players]
+                  .sort((a, b) => {
+                    const scoreA = gameState.scores[a.clerk_user_id] ?? 0;
+                    const scoreB = gameState.scores[b.clerk_user_id] ?? 0;
+                    return scoreB - scoreA;
+                  })
+                  .map((p) => {
+                    const score = gameState.scores[p.clerk_user_id] ?? 0;
+                    const isMe = p.clerk_user_id === myUserId;
+                    return (
+                      <View key={p.id} style={[styles.scoreModalRow, isMe && styles.scoreModalRowMe]}>
+                        <View style={{ flex: 2, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          {p.avatar_url ? (
+                            <Image source={{ uri: p.avatar_url }} style={styles.scoreModalAvatar} />
+                          ) : (
+                            <View style={styles.scoreModalAvatarPlaceholder}>
+                              <Text style={styles.scoreModalAvatarText}>{p.username.charAt(0).toUpperCase()}</Text>
+                            </View>
+                          )}
+                          <Text style={[styles.scoreModalCellText, { textAlign: "left" }, isMe && { fontWeight: "700", color: colors.light.gold }]} numberOfLines={1}>
+                            {isMe ? "You" : p.username}
+                          </Text>
+                        </View>
+                        <Text style={styles.scoreModalCellText}>{p.seat_order}</Text>
+                        <Text style={[styles.scoreModalCellText, { fontWeight: "700", color: colors.light.gold, textAlign: "right" }]}>{score} pts</Text>
                       </View>
-                      <Text style={styles.scoreModalCellText}>{p.seat_order}</Text>
-                      <Text style={[styles.scoreModalCellText, { fontWeight: "700", color: colors.light.gold, textAlign: "right" }]}>{score} pts</Text>
-                    </View>
-                  );
-                })}
+                    );
+                  })}
               </View>
 
               <Pressable

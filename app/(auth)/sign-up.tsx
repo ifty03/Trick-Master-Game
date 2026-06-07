@@ -235,7 +235,7 @@ export default function SignUpScreen() {
           <Ionicons name="diamond" size={36} color={colors.light.gold} />
         </View>
 
-        <Text style={styles.appName}>TrickMaster</Text>
+        <Text style={styles.appName}>Trick Master</Text>
         <Text style={styles.title}>Create your account</Text>
         <Text style={styles.subtitle}>Join the table and start playing</Text>
 

@@ -290,7 +290,7 @@ export default function SignInScreen() {
           <Ionicons name="diamond" size={36} color={colors.light.gold} />
         </View>
 
-        <Text style={styles.appName}>TrickMaster</Text>
+        <Text style={styles.appName}>Trick Master</Text>
         <Text style={styles.title}>Welcome back</Text>
         <Text style={styles.subtitle}>Sign in to continue playing</Text>
 
